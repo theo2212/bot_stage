@@ -1,0 +1,206 @@
+import yaml
+import sys
+import os
+import traceback
+from datetime import datetime
+
+# Add current directory to sys.path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from modules.analyzer import Analyzer
+from modules.utils import extract_text_from_pdf
+
+def load_config():
+    with open("config.yaml", "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+def run_search(fresh=False):
+    import time
+    from rich.live import Live
+    from modules.job_search import JobSearch
+    from modules.dashboard import Dashboard
+
+    if fresh:
+        config = load_config()
+        db_path = config["paths"]["tracking_db"]
+        if os.path.exists(db_path):
+            os.remove(db_path)
+            print(f"Cleared existing database at {db_path}")
+
+    dashboard = Dashboard()
+    searcher = JobSearch(dashboard=dashboard)
+
+    with Live(dashboard.generate_layout(), refresh_per_second=4, screen=True) as live:
+        dashboard.log("System initialized.")
+        dashboard.set_status("Idle")
+        
+        try:
+            searcher.notifier.send_startup_alert()
+        except Exception as e:
+            print(f"Startup alert failed: {e}")
+        
+        import json
+        import threading
+        
+        def heartbeat_loop():
+            while True:
+                try:
+                    os.makedirs("data", exist_ok=True)
+                    current_data = {}
+                    if os.path.exists("data/scraper_status.json"):
+                        with open("data/scraper_status.json", "r") as f:
+                            current_data = json.load(f)
+                    current_data["heartbeat"] = time.time()
+                    with open("data/scraper_status.json", "w") as f:
+                        json.dump(current_data, f)
+                except:
+                    pass
+                time.sleep(10)
+                
+        threading.Thread(target=heartbeat_loop, daemon=True).start()
+        
+        def get_scraper_status():
+            try:
+                if os.path.exists("data/scraper_status.json"):
+                    with open("data/scraper_status.json", "r") as f:
+                        return json.load(f).get("status", "stopped")
+            except:
+                pass
+            return "stopped"
+
+        def force_status_running():
+            try:
+                os.makedirs("data", exist_ok=True)
+                with open("data/scraper_status.json", "w") as f:
+                    json.dump({"status": "running"}, f)
+            except:
+                pass
+                
+        # Automatically begin running when launched from CLI!
+        force_status_running()
+
+        while True:
+            try:
+                current_status = get_scraper_status()
+                
+                if current_status == "running":
+                    live.update(dashboard.generate_layout())
+                    
+                    dashboard.set_status("Checking LinkedIn...")
+                    dashboard.log("Starting search cycle...")
+                    
+                    new_jobs = searcher.run()
+                    
+                    if new_jobs:
+                        dashboard.log(f"Found {len(new_jobs)} new jobs!")
+                    else:
+                        dashboard.log("No new jobs found.")
+                    
+                    dashboard.set_status("Sleeping (10min)")
+                    
+                    # Sleep loop with update and status check
+                    for i in range(600): # 10 minutes
+                        if get_scraper_status() == "stopped":
+                            dashboard.log("Scraping stopped by user.")
+                            dashboard.set_status("Idle")
+                            break
+                        live.update(dashboard.generate_layout())
+                        time.sleep(1)
+                else:
+                    # Stopped mode
+                    dashboard.set_status("Idle")
+                    live.update(dashboard.generate_layout())
+                    time.sleep(5) # Check status every 5 seconds
+                    
+            except KeyboardInterrupt as ki:
+                dashboard.log("KeyboardInterrupt caught!")
+                with open("error.log", "a", encoding="utf-8") as f:
+                    f.write(f"\n--- {datetime.now()} ---\nKeyboardInterrupt!")
+                    traceback.print_exc(file=f)
+                break
+            except BaseException as be:
+                error_msg = traceback.format_exc()
+                dashboard.log(f"BaseException: {be}")
+                with open("error.log", "a", encoding="utf-8") as f:
+                    f.write(f"\n--- {datetime.now()} ---\n{error_msg}")
+                time.sleep(5)
+                break
+
+def main():
+    print("--- Stage Hunter 3000 ---")
+
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1]
+        fresh = "--fresh" in sys.argv
+        
+        if cmd == "search":
+            print("Launching Scraper...")
+            try:
+                run_search(fresh=fresh)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"CRITICAL ERROR IN SEARCH: {e}")
+                
+        elif cmd == "regenerate":
+            print("--- Mode: Regenerate from DB ---")
+            try:
+                from modules.job_search import JobSearch
+                searcher = JobSearch()
+                searcher.regenerate_from_db()
+                print("Regeneration complete.")
+            except Exception as e:
+                traceback.print_exc()
+                print(f"CRITICAL ERROR IN REGENERATE: {e}")
+
+        elif cmd == "learn":
+            print("--- AI Feedback Loop: Learning from Notion 'NULL' Jobs ---")
+            try:
+                from modules.job_search import JobSearch
+                searcher = JobSearch()
+                searcher.learn_from_rejections()
+            except Exception as e:
+                traceback.print_exc()
+                print(f"CRITICAL ERROR IN LEARN: {e}")
+
+        elif cmd == "mail":
+            print("--- Two-Way Sync: Checking Gmail for Responses ---")
+            try:
+                from modules.job_search import JobSearch
+                searcher = JobSearch()
+                searcher.sync_emails()
+            except Exception as e:
+                traceback.print_exc()
+                print(f"CRITICAL ERROR IN MAIL SYNC: {e}")
+                
+
+
+        elif cmd == "generate":
+            print("--- Testing Generator ---")
+            try:
+                from modules.generator import Generator
+                from modules.analyzer import Analyzer
+                
+                config = load_config()
+                cv_path = config["paths"]["master_cv"]
+                cv_text = extract_text_from_pdf(cv_path)
+                desc = "We need an NLP Engineer..."
+                
+                analyzer = Analyzer(config_path="config.yaml")
+                print("Generating Content with LLM...")
+                json_content = analyzer.generate_cover_letter(cv_text, desc, "TechCorp", "NLP Intern")
+                
+                gen = Generator()
+                path = gen.create_application_package("TechCorp", "NLP Intern", json_content)
+                print(f"Generated application in: {path}")
+            except Exception as e:
+                print(f"Generator Error: {e}")
+    else:
+        print("\nUsage:")
+        print("python main.py search [--fresh]      -> Run LinkedIn Scraper & Analysis")
+        print("python main.py mail                  -> Read Gmail to auto-update Notion statuses")
+        print("python main.py learn                 -> Analyze 'NULL' jobs on Notion to avoid them")
+        print("python main.py regenerate            -> Re-run Analysis on existing DB (No scraping)")
+        print("python main.py generate              -> Run basic CV Analyzer Test\n")
+
+if __name__ == "__main__":
+    main()

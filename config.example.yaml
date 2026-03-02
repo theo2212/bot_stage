@@ -1,0 +1,49 @@
+# Stage Hunter Configuration
+# Example file for GitHub
+
+paths:
+  master_cv: "data/resumes/master_cv.pdf"
+  templates: "data/templates"
+  output: "data/output"
+  tracking_db: "data/jobs_db.json"
+
+llm:
+  base_url: "http://localhost:1234/v1"  # Default for LM Studio / AnythingLLM
+  api_key: "lm-studio"  # Usually ignored for local servers
+  model: "dolphin3.0-llama3.1-8b"  # Detected from local server
+  temperature: 0.7
+
+search:
+  keywords:
+    - "NLP Engineer"
+    - "Data Analyst"
+    - "Data Scientist"
+    - "Machine Learning Engineer"
+    - "Computer Vision"
+    - "Data Engineer"
+    - "Stage Intelligence Artificielle"
+    - "Generative AI"
+  locations:
+    - "Paris"
+    - "Île-de-France"
+  exclude_companies:
+    - "ESI"  # Example exclusion
+
+user_profile:
+  name: "YOUR_NAME"
+  email: "YOUR_EMAIL"
+  phone: "YOUR_PHONE"
+  linkedin: "YOUR_LINKEDIN_URL"
+
+discord:
+  webhook_url: "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL_HERE"  # PASTE YOUR WEBHOOK HERE
+  username: "Stage Hunter 3000"
+  avatar_url: "https://i.imgur.com/4M34hi2.png"  # Optional robot icon
+
+notion:
+  token: "YOUR_NOTION_INTEGRATION_TOKEN_HERE"
+  database_id: "YOUR_NOTION_DATABASE_ID_HERE"
+
+email:
+  address: "YOUR_GMAIL_ADDRESS"
+  app_password: "YOUR_GMAIL_APP_PASSWORD"

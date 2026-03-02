@@ -1,0 +1,40 @@
+# Python Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+modules/__pycache__/
+scrapers/__pycache__/
+
+# Configuration & Secrets
+config.yaml
+
+# Logs and Debug files
+*.log
+debug.txt
+error.log
+output.log
+test_*.py
+job_out.json
+job_out.txt
+check_models.py
+critique.txt
+
+# Local trackers & DBs
+data/scraper_status.json
+data/jobs_db.json
+data/output/*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
