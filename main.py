@@ -7,6 +7,10 @@ from datetime import datetime
 # Add current directory to sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Absolute path constants - shared with dashboard.py
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATUS_FILE = os.path.join(BASE_DIR, "data", "scraper_status.json")
+
 from modules.analyzer import Analyzer
 from modules.utils import extract_text_from_pdf
 
@@ -31,6 +35,7 @@ def run_search(fresh=False):
     searcher = JobSearch(dashboard=dashboard)
 
     with Live(dashboard.generate_layout(), refresh_per_second=4, screen=True) as live:
+        dashboard.live_context = live
         dashboard.log("System initialized.")
         dashboard.set_status("Idle")
         
@@ -47,22 +52,23 @@ def run_search(fresh=False):
                 try:
                     os.makedirs("data", exist_ok=True)
                     current_data = {}
-                    if os.path.exists("data/scraper_status.json"):
-                        with open("data/scraper_status.json", "r") as f:
+                    if os.path.exists(STATUS_FILE):
+                        with open(STATUS_FILE, "r", encoding="utf-8") as f:
                             current_data = json.load(f)
                     current_data["heartbeat"] = time.time()
-                    with open("data/scraper_status.json", "w") as f:
+                    current_data["pid"] = os.getpid()
+                    with open(STATUS_FILE, "w", encoding="utf-8") as f:
                         json.dump(current_data, f)
                 except:
                     pass
-                time.sleep(10)
+                time.sleep(5)
                 
         threading.Thread(target=heartbeat_loop, daemon=True).start()
         
         def get_scraper_status():
             try:
-                if os.path.exists("data/scraper_status.json"):
-                    with open("data/scraper_status.json", "r") as f:
+                if os.path.exists(STATUS_FILE):
+                    with open(STATUS_FILE, "r", encoding="utf-8") as f:
                         return json.load(f).get("status", "stopped")
             except:
                 pass
@@ -70,9 +76,14 @@ def run_search(fresh=False):
 
         def force_status_running():
             try:
-                os.makedirs("data", exist_ok=True)
-                with open("data/scraper_status.json", "w") as f:
-                    json.dump({"status": "running"}, f)
+                os.makedirs(os.path.dirname(STATUS_FILE), exist_ok=True)
+                current_data = {}
+                if os.path.exists(STATUS_FILE):
+                    with open(STATUS_FILE, "r", encoding="utf-8") as f:
+                        current_data = json.load(f)
+                current_data["status"] = "running"
+                with open(STATUS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(current_data, f)
             except:
                 pass
                 
@@ -145,8 +156,12 @@ def main():
             print("--- Mode: Regenerate from DB ---")
             try:
                 from modules.job_search import JobSearch
-                searcher = JobSearch()
+                from modules.dashboard import Dashboard
+                db_dash = Dashboard()
+                db_dash.set_status("Regenerating...")
+                searcher = JobSearch(dashboard=db_dash)
                 searcher.regenerate_from_db()
+                db_dash.set_status("Terminé")
                 print("Regeneration complete.")
             except Exception as e:
                 traceback.print_exc()
@@ -156,8 +171,13 @@ def main():
             print("--- AI Feedback Loop: Learning from Notion 'NULL' Jobs ---")
             try:
                 from modules.job_search import JobSearch
-                searcher = JobSearch()
+                from modules.dashboard import Dashboard
+                learn_dash = Dashboard()
+                learn_dash.set_status("Learning...")
+                searcher = JobSearch(dashboard=learn_dash)
                 searcher.learn_from_rejections()
+                learn_dash.set_status("Terminé")
+                print("Learning complete.")
             except Exception as e:
                 traceback.print_exc()
                 print(f"CRITICAL ERROR IN LEARN: {e}")
@@ -166,8 +186,13 @@ def main():
             print("--- Two-Way Sync: Checking Gmail for Responses ---")
             try:
                 from modules.job_search import JobSearch
-                searcher = JobSearch()
+                from modules.dashboard import Dashboard
+                mail_dash = Dashboard()
+                mail_dash.set_status("Syncing Emails...")
+                searcher = JobSearch(dashboard=mail_dash)
                 searcher.sync_emails()
+                mail_dash.set_status("Prêt")
+                print("Email sync complete.")
             except Exception as e:
                 traceback.print_exc()
                 print(f"CRITICAL ERROR IN MAIL SYNC: {e}")

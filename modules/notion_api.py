@@ -161,7 +161,8 @@ class NotionAPI:
                 "or": [
                     {"property": "Statut", "select": {"equals": "À postuler"}},
                     {"property": "Statut", "select": {"equals": "En Attente"}},
-                    {"property": "Statut", "select": {"equals": "Postulé"}}
+                    {"property": "Statut", "select": {"equals": "Postulé"}},
+                    {"property": "Statut", "select": {"equals": "En cours"}}
                 ]
             }
         }
@@ -280,4 +281,40 @@ class NotionAPI:
             return res.status_code == 200
         except Exception as e:
             print(f"[Notion] Update failed: {e}")
+            return False
+
+    def update_job_status_by_company(self, company_name, new_status):
+        """
+        Searches for a job by company name in the database and updates its status.
+        Uses a case-insensitive search.
+        """
+        if not self.token or not self.database_id:
+            return False
+            
+        # 1. Search for the page
+        url = f"https://api.notion.com/v1/databases/{self.database_id}/query"
+        payload = {
+            "filter": {
+                "property": "Entreprise",
+                "rich_text": {
+                    "contains": company_name
+                }
+            }
+        }
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=payload)
+            if response.status_code == 200:
+                results = response.json().get("results", [])
+                if not results:
+                    # Try a fuzzy search by fetching active and matching manually 
+                    # if simple 'contains' fails due to exact casing/naming.
+                    return False
+                
+                # Take the most recent one (Notion returns in reverse chronological usually)
+                page_id = results[0]["id"]
+                return self.update_job_status(page_id, new_status)
+            return False
+        except Exception as e:
+            print(f"[Notion] Status sync failed for {company_name}: {e}")
             return False

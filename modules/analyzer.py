@@ -260,13 +260,16 @@ class Analyzer:
         {email_body[:2000]}
         
         RULES:
-        1. If it's an automated "Thank you for applying / We received your application" -> Return "POSTULE"
-        2. If it's a clear rejection ("We regret to inform you", "Nous ne retenons pas") -> Return "REFUS"
-        3. If it's an invitation for a call, an interview, or a technical test -> Return "ENTRETIEN"
-        4. If it's marketing spam, newsletter, or unrelated -> Return "IGNORE"
+        1. **PRIORITIZE THE SUBJECT**: Automated recruitment emails often have clear subjects like "Candidature reçue", "Confirmation", or "Your application". If the subject is definitive, follow its lead.
+        2. "POSTULE" (Confirmation): If the email confirms an application was successfully received.
+        3. "REFUS" (Rejection): Any decline, even polite/vague ones. Keywords: "Malheureusement", "Not moving forward", "Decided to pass", "Other candidates".
+        4. "ENTRETIEN" (Interview/Test): Any request for a meeting or technical test.
+        5. "IGNORE" (Unrelated): LinkedIn Job Alerts, generic invitations to apply, or marketing.
+        
+        CRITICAL: If it's just a LinkedIn job alert or an invite to apply for a *new* job, return "IGNORE".
         
         OUTPUT FORMAT:
-        Return ONLY the single EXACT keyword ("POSTULE", "REFUS", "ENTRETIEN", or "IGNORE"). No other text.
+        Return ONLY the single EXACT keyword ("POSTULE", "REFUS", "ENTRETIEN", or "IGNORE"). Absolutely no other text.
         """
         
         try:

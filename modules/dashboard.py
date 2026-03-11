@@ -20,25 +20,56 @@ class Dashboard:
             "start_time": datetime.now()
         }
     
+    def dump_state(self):
+        import json, os
+        os.makedirs("data", exist_ok=True)
+        state = {
+            "status": self.status,
+            "logs": self.logs,
+            "jobs": self.jobs,
+            "stats": {
+                "jobs_scanned": self.stats["jobs_scanned"],
+                "ai_matches": self.stats["ai_matches"]
+            }
+        }
+        try:
+            with open("data/live_state.json", "w", encoding="utf-8") as f:
+                json.dump(state, f)
+        except: pass
+
     def update_stats(self, scanned=0, matches=0):
         self.stats["jobs_scanned"] += scanned
         self.stats["ai_matches"] += matches
+        
+        if hasattr(self, 'live_context') and self.live_context:
+            self.live_context.update(self.generate_layout())
+        self.dump_state()
     
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.logs.append(f"[{timestamp}] {message}")
         if len(self.logs) > 15:
             self.logs.pop(0)
+        
+        # Force redraw if we have a live context linked!
+        if hasattr(self, 'live_context') and self.live_context:
+            self.live_context.update(self.generate_layout())
+        self.dump_state()
 
     def add_job_row(self, source, company, title, status):
         self.jobs.append({"source": source, "company": company, "title": title, "status": status})
         if len(self.jobs) > 10:
             self.jobs.pop(0)
+        self.dump_state()
 
     def set_status(self, status):
         self.status = status
         if "Checking" in status:
             self.last_check = datetime.now().strftime("%H:%M:%S")
+            
+        if hasattr(self, 'live_context') and self.live_context:
+            self.live_context.update(self.generate_layout())
+        self.dump_state()
 
     def generate_layout(self):
         layout = Layout()
