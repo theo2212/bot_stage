@@ -13,5 +13,5 @@ rich
 psycopg2-binary
 sqlalchemy
 groq
-streamlit
+streamlit>=1.40.0
 plotly
