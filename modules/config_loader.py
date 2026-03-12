@@ -41,5 +41,21 @@ def load_config(config_path="config.yaml"):
     # Discord
     if "discord" not in config: config["discord"] = {}
     config["discord"]["webhook_url"] = os.environ.get("DISCORD_WEBHOOK_URL", config["discord"].get("webhook_url"))
+    config["discord"]["avatar_url"] = os.environ.get("DISCORD_AVATAR_URL", config["discord"].get("avatar_url"))
+    
+    # Search Parameters (Fallback to defaults)
+    if "search" not in config: config["search"] = {}
+    
+    kw_env = os.environ.get("SEARCH_KEYWORDS")
+    if kw_env:
+        config["search"]["keywords"] = [k.strip() for k in kw_env.split(",")]
+    else:
+        config["search"].setdefault("keywords", ["Stage NLP", "Stage IA", "Stage Data Science"])
+
+    loc_env = os.environ.get("SEARCH_LOCATIONS")
+    if loc_env:
+        config["search"]["locations"] = [l.strip() for l in loc_env.split(",")]
+    else:
+        config["search"].setdefault("locations", ["Paris, France", "Remote"])
     
     return config
