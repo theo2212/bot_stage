@@ -47,9 +47,14 @@ class Dashboard:
     
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.logs.append(f"[{timestamp}] {message}")
+        log_entry = f"[{timestamp}] {message}"
+        self.logs.append(log_entry)
         if len(self.logs) > 15:
             self.logs.pop(0)
+        
+        # In CI/GitHub Actions, we need to actually print to see the logs
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"DEBUG: {log_entry}")
         
         # Force redraw if we have a live context linked!
         if hasattr(self, 'live_context') and self.live_context:

@@ -42,4 +42,4 @@ jobs:
           SEARCH_LOCATIONS: ${{ secrets.SEARCH_LOCATIONS }}
         run: |
           echo "Démarrage du script principal..."
-          python main.py search
+          python -u main.py search
