@@ -432,13 +432,17 @@ class JobSearch:
                 
             # 2. Key Term Filter (relaxed: handled by _passes_quick_filter)
             if not self._passes_quick_filter(job):
+                if self.dashboard: self.dashboard.log(f"Ignoring (No 'intern'/ 'stage' keyword): {job.get('title', 'Unknown')} @ {job.get('company', 'Unknown')}")
                 continue
+            
             cleaned_link = self._clean_url(job.get("link", ""))
             if cleaned_link and cleaned_link not in self.seen_links:
                 job["link"] = cleaned_link # Normalize right away
                 job_pool.append(job)
                 if len(job_pool) >= 15: # Cap pool at 15 to save API tokens and time
                     break
+            else:
+                if self.dashboard: self.dashboard.log(f"Already seen (Duplicate): {job.get('title', 'Unknown')} @ {job.get('company', 'Unknown')}")
         return job_pool
 
     def _passes_quick_filter(self, job):
