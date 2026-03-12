@@ -47,10 +47,16 @@ def run_search(fresh=False):
     if is_ci:
         print("[CI Mode] Starting scraper without rich UI...")
         dashboard.log("CI Mode Active.")
-        try:
-            searcher.notifier.send_startup_alert()
-        except Exception as e:
-            print(f"Startup alert failed: {e}")
+        # Verify Discord Webhook
+        webhook_url = searcher.notifier.webhook_url
+        if webhook_url:
+            print(f"[CI Mode] Discord Webhook detected (length: {len(webhook_url)}). Sending startup alert...")
+            try:
+                searcher.notifier.send_startup_alert()
+            except Exception as e:
+                print(f"Startup alert failed: {e}")
+        else:
+            print("[CI Mode] WARNING: No Discord Webhook URL found in config or environment variables!")
         
         # In CI, we just run once and exit
         print("Starting search cycle...")
