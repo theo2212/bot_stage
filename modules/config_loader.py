@@ -43,6 +43,22 @@ def load_config(config_path="config.yaml"):
     config["discord"]["webhook_url"] = os.environ.get("DISCORD_WEBHOOK_URL", config["discord"].get("webhook_url"))
     config["discord"]["avatar_url"] = os.environ.get("DISCORD_AVATAR_URL", config["discord"].get("avatar_url"))
     
+    # Paths (Default values if missing)
+    if "paths" not in config: 
+        config["paths"] = {
+            "output": "data/output",
+            "cv": "data/cv.pdf"
+        }
+    
+    # User Profile (Default values if missing)
+    if "user_profile" not in config:
+        config["user_profile"] = {
+            "name": "Théo Consigny",
+            "email": "theo.consigny@gmail.com",
+            "phone": "0600000000",
+            "linkedin": "https://linkedin.com/in/theoconsigny"
+        }
+    
     # Search Parameters (Fallback to defaults)
     if "search" not in config: config["search"] = {}
     
