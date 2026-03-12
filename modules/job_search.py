@@ -34,7 +34,7 @@ class JobSearch:
                 self.anti_patterns = f.read().strip()
         
         # Load CV
-        cv_path = self.config["paths"]["master_cv"]
+        cv_path = self.config.get("paths", {}).get("master_cv", "data/cv.pdf")
         try:
             self.cv_text = extract_text_from_pdf(cv_path)
         except:

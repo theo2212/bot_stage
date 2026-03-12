@@ -47,8 +47,16 @@ def load_config(config_path="config.yaml"):
     if "paths" not in config: 
         config["paths"] = {
             "output": "data/output",
-            "cv": "data/cv.pdf"
+            "cv": "data/cv.pdf",
+            "master_cv": "data/cv.pdf",
+            "tracking_db": "data/jobs_local.db"
         }
+    else:
+        # Ensure specific keys exist even if 'paths' exists
+        config["paths"].setdefault("output", "data/output")
+        config["paths"].setdefault("cv", "data/cv.pdf")
+        config["paths"].setdefault("master_cv", "data/cv.pdf")
+        config["paths"].setdefault("tracking_db", "data/jobs_local.db")
     
     # User Profile (Default values if missing)
     if "user_profile" not in config:
