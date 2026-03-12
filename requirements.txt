@@ -10,3 +10,5 @@ openpyxl
 selenium
 webdriver-manager
 rich
+psycopg2-binary
+sqlalchemy

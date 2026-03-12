@@ -173,15 +173,29 @@ class JobSearch:
         if self.dashboard:
             self.dashboard.log("--- REGENERATION MODE ---")
         
-        # Load DB manually
-        if os.path.exists(self.db_path):
-            with open(self.db_path, "r", encoding="utf-8") as f:
-                jobs = json.load(f)
-        else:
+        # Load DB manually from PostgreSQL
+        try:
+            db_jobs = self.db.get_all_jobs()
+            jobs = []
+            for j in db_jobs:
+                # Map PostgreSQL french columns back to English expected by process_job()
+                mapped_job = {
+                    "company": j.get("entreprise", ""),
+                    "title": j.get("titre", ""),
+                    "location": j.get("lieu", ""),
+                    "status": j.get("statut", "NULL"),
+                    "ai_score": j.get("score_ia", 0),
+                    "link": j.get("lien", ""),
+                    "ai_critique": j.get("critique_ia"),
+                    "source": "PostgreSQL"
+                }
+                jobs.append(mapped_job)
+        except Exception as e:
+            if self.dashboard: self.dashboard.log(f"Error loading from DB: {e}")
             jobs = []
 
         if self.dashboard:
-             self.dashboard.log(f"Loaded {len(jobs)} jobs from DB.")
+             self.dashboard.log(f"Loaded {len(jobs)} jobs from PostgreSQL DB.")
 
         for job in jobs:
             self.process_job(job)
@@ -256,7 +270,7 @@ class JobSearch:
         processed_email_ids = set()
         
         for job in active_jobs:
-            raw_company = job['company']
+            raw_company = job['entreprise']
             norm_company = self._normalize_company_name(raw_company)
             
             if self.dashboard: self.dashboard.log(f"Searching for feedback from: {raw_company}...")
@@ -274,7 +288,7 @@ class JobSearch:
                 if norm_company and (norm_company in sender or norm_company in subject or norm_company in body):
                     match_found = True
                     match_type = "Normalized"
-                elif raw_company.lower() in sender or raw_company.lower() in subject or raw_company.lower() in body:
+                elif raw_company and raw_company.strip() and (raw_company.lower() in sender or raw_company.lower() in subject or raw_company.lower() in body):
                     match_found = True
                     match_type = "Raw"
 
@@ -285,7 +299,7 @@ class JobSearch:
                     if self.dashboard: self.dashboard.log(msg)
                     
                     # Ask LLM to classify
-                    status_change = self.analyzer.analyze_email_response(em['subject'], em['body'], job['company'])
+                    status_change = self.analyzer.analyze_email_response(em['subject'], em['body'], raw_company)
                     log_msg = f"AI Classified as: {status_change}"
                     print(f"🧠 {log_msg}")
                     if self.dashboard: self.dashboard.log(log_msg)
@@ -294,41 +308,103 @@ class JobSearch:
                     
                     if status_change == "POSTULE":
                         # Mark as read/processed (not delete, to keep history)
-                        if job['status'] != "Postulé":
-                            self.db.update_job_status_by_company(job['company'], "Postulé")
+                        if job['statut'] != "Postulé":
+                            self.db.update_job_status_by_company(job['entreprise'], "Postulé")
                             if hasattr(self, 'notion') and self.notion.token:
-                                self.notion.update_job_status_by_company(job['company'], "Postulé")
-                            if self.dashboard: self.dashboard.log(f"Confirmation for {job['company']} -> DB/Notion: Postulé")
+                                self.notion.update_job_status_by_company(job['entreprise'], "Postulé")
+                            if self.dashboard: self.dashboard.log(f"Confirmation for {job['entreprise']} -> DB/Notion: Postulé")
                     elif status_change == "REFUS":
-                        if job['status'] != "NULL":
-                            self.db.update_job_status_by_company(job['company'], "NULL")
+                        if job['statut'] != "NULL":
+                            self.db.update_job_status_by_company(job['entreprise'], "NULL")
                             if hasattr(self, 'notion') and self.notion.token:
-                                self.notion.update_job_status_by_company(job['company'], "NULL")
-                            if self.dashboard: self.dashboard.log(f"Rejection detected for {job['company']} -> DB/Notion: NULL")
+                                self.notion.update_job_status_by_company(job['entreprise'], "NULL")
+                            if self.dashboard: self.dashboard.log(f"Rejection detected for {job['entreprise']} -> DB/Notion: NULL")
                     elif status_change == "ENTRETIEN":
                         reader.mark_unread(em['id']) # Keep unread so user sees it in Gmail
-                        if job['status'] != "En cours":
-                            self.db.update_job_status_by_company(job['company'], "En cours")
+                        if job['statut'] != "En cours":
+                            self.db.update_job_status_by_company(job['entreprise'], "En cours")
                             if hasattr(self, 'notion') and self.notion.token:
-                                self.notion.update_job_status_by_company(job['company'], "En cours")
-                            if self.dashboard: self.dashboard.log(f"ENTRETIEN detected for {job['company']} -> DB/Notion: En cours")
+                                self.notion.update_job_status_by_company(job['entreprise'], "En cours")
+                            if self.dashboard: self.dashboard.log(f"ENTRETIEN detected for {job['entreprise']} -> DB/Notion: En cours")
+                            
+                        # AUTO-DRAFT REPLY
+                        draft_text = self.analyzer.generate_interview_reply_draft(job['entreprise'], em['body'])
+                        if reader.create_draft_reply(em['sender'], em['subject'], draft_text, em.get('message_id'), em.get('references')):
+                            draft_msg = f"✍️ Auto-Draft reply created for {job['entreprise']}!"
+                            print(draft_msg)
+                            if self.dashboard: self.dashboard.log(draft_msg)
                     else:
                         # AI says IGNORE
                         reader.mark_unread(em['id'])
-                        if self.dashboard: self.dashboard.log(f"Email from {job['company']} ignored (AI). Keeping unread.")
+                        if self.dashboard: self.dashboard.log(f"Email from {job['entreprise']} ignored (AI). Keeping unread.")
                     
                     # Stop looking for this job in other emails for now (or continue if multiple emails? usually one is enough for a status update)
                     break
         
-        # FINAL STEP: Any email that was fetched but NOT matched must be marked as unread
+        # FINAL STEP: Process unmatched emails utilizing the LLM to discover unknown companies
         unmatched_count = 0
+        discovered_count = 0
+        import datetime
+        
         for em in emails:
             if em['id'] not in processed_email_ids:
-                reader.mark_unread(em['id'])
-                unmatched_count += 1
+                if self.dashboard: self.dashboard.log(f"Analyzing unmatched email with AI: {em['subject'][:30]}...")
+                
+                analysis = self.analyzer.analyze_unknown_email(em['subject'], em.get('body', ''))
+                
+                if analysis.get("is_job_response") and analysis.get("company_name") and analysis.get("status") in ["POSTULE", "REFUS", "ENTRETIEN"]:
+                    new_company = analysis["company_name"]
+                    new_status = analysis["status"]
+                    job_title = analysis.get("job_title", "Candidature Spontanée / Inconnue")
+                    
+                    # Convert AI string back to PostgreSQL strict Enums based on your mapping
+                    db_status = "NULL"
+                    if new_status == "POSTULE": db_status = "Postulé"
+                    elif new_status == "ENTRETIEN": db_status = "En cours"
+                    elif new_status == "REFUS": db_status = "NULL"
+                    
+                    msg = f"🌟 AI DISCOVERY: {new_status} from {new_company} for {job_title}"
+                    print(msg)
+                    if self.dashboard: self.dashboard.log(msg)
+                    
+                    # Add to tracking database
+                    new_job = {
+                        "titre": job_title,
+                        "entreprise": new_company,
+                        "lieu": "Inconnu (Via Email)",
+                        "lien": f"email://{em['id']}",
+                        "source": "Gmail Scraper",
+                        "statut": db_status,
+                        "date": datetime.datetime.now().strftime("%Y-%m-%d"),
+                        "score_ia": 0
+                    }
+                    self.db.save_job(new_job)
+                    discovered_count += 1
+                    
+                    # Push critical statuses to Notion so User sees them on the board
+                    if db_status in ["En cours", "Postulé"] and hasattr(self, 'notion') and self.notion.token:
+                        self.notion.add_job_entry(new_job, "0", short_desc="Auto-discovered from Gmail.")
+                        if self.dashboard: self.dashboard.log(f"Created Notion card for {new_company}.")
+                        
+                    # Auto-Drafting for discovered interviews
+                    if db_status == "En cours":
+                        reader.mark_unread(em['id']) # Keep unread so user sees the interview request!
+                        draft_text = self.analyzer.generate_interview_reply_draft(new_company, em.get('body', ''))
+                        if reader.create_draft_reply(em['sender'], em['subject'], draft_text, em.get('message_id'), em.get('references')):
+                            draft_msg = f"✍️ Auto-Draft reply created for {new_company}!"
+                            print(draft_msg)
+                            if self.dashboard: self.dashboard.log(draft_msg)
+                else:
+                    reader.mark_unread(em['id']) # Restore truly irrelevant emails
+                    unmatched_count += 1
         
         if unmatched_count > 0:
             msg = f"Restored {unmatched_count} unrelated emails to 'Unread' status."
+            print(msg)
+            if self.dashboard: self.dashboard.log(msg)
+            
+        if discovered_count > 0:
+            msg = f"🎉 Discovery Mode extracted {discovered_count} new interactions from emails!"
             print(msg)
             if self.dashboard: self.dashboard.log(msg)
                     

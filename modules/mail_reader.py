@@ -130,11 +130,17 @@ class MailReader:
                         # Get body
                         body = self._get_text_from_email(msg)
                         
+                        # Get threading headers for replies
+                        message_id = msg.get("Message-ID", "")
+                        references = msg.get("References", "")
+                        
                         emails_data.append({
                             "id": e_id,
                             "sender": sender,
                             "subject": subject,
-                            "body": body[:5000] # Cap length to save tokens
+                            "body": body[:5000], # Cap length to save tokens
+                            "message_id": message_id,
+                            "references": references
                         })
                         
             mail.logout()
@@ -169,6 +175,61 @@ class MailReader:
             return True
         except Exception as e:
             print(f"[MailReader] Error marking email {email_id} as unread: {e}")
+            return False
+
+    def create_draft_reply(self, to_email, original_subject, body_text, message_id="", references=""):
+        """
+        Creates a new draft reply in the user's Gmail Drafts folder.
+        """
+        from email.message import EmailMessage
+        import time
+        
+        try:
+            msg = EmailMessage()
+            msg.set_content(body_text)
+            
+            # Format subject: add Re: if not present
+            subject = original_subject if original_subject.lower().startswith("re:") else f"Re: {original_subject}"
+            
+            msg['Subject'] = subject
+            msg['From'] = self.username
+            msg['To'] = to_email
+            
+            # Threading headers
+            if message_id:
+                msg['In-Reply-To'] = message_id
+                
+                # Build references chain
+                new_refs = references.strip() if references else ""
+                if new_refs:
+                    msg['References'] = f"{new_refs} {message_id}"
+                else:
+                    msg['References'] = message_id
+            
+            mail = imaplib.IMAP4_SSL(self.imap_server)
+            mail.login(self.username, self.password)
+            
+            # Gmail uses 'Brouillons' or '[Gmail]/Drafts' depending on language.
+            # Try English first, then French
+            draft_folder = '"[Gmail]/Drafts"'
+            status, _ = mail.select(draft_folder)
+            if status != "OK":
+                draft_folder = '"[Gmail]/Brouillons"'
+                status, _ = mail.select(draft_folder)
+                
+            if status == "OK":
+                # \Draft flag is important
+                mail.append(draft_folder, '\\Draft', imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+                print(f"[MailReader] Draft successfully saved to {draft_folder}")
+                mail.logout()
+                return True
+            else:
+                print(f"[MailReader] Could not find Drafts folder. Tried Drafts and Brouillons.")
+                mail.logout()
+                return False
+                
+        except Exception as e:
+            print(f"[MailReader] Error creating draft: {e}")
             return False
 
 if __name__ == "__main__":

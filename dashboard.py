@@ -125,13 +125,13 @@ def load_data():
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
             
-    # Fetch live data directly from SQLite DB
+    # Fetch live data directly from PostgreSQL
     try:
         db = DBManager()
         jobs = db.get_all_jobs()
     except Exception as e:
         jobs = []
-        st.sidebar.error(f"DB Error: {e}")
+        st.sidebar.error(f"PostgreSQL Error: {e}")
         
     return config, jobs
 
@@ -265,96 +265,60 @@ df = pd.DataFrame()
 if jobs:
     df_data = []
     for j in jobs:
-        score = j.get("ai_score", 0)
-        # Parse Dates
-        scraped_dt = j.get("date_scraped", None)
-        crit = j.get("ai_critique")
-        
-        # Safely extract critique items if they exist
-        pros = "N/A"
-        short_desc = "N/A"
-
-        if crit and isinstance(crit, dict):
-            # Split PROS/CONS cleanly - only keeping pros this time
-            full_pros_cons = crit.get("PROS_CONS", "N/A")
-            if "Inconvénient" in full_pros_cons:
-                parts = full_pros_cons.split("Inconvénient")
-                pros = parts[0].replace("Avantage", "").replace("s :", "").replace(" :", "").strip()
-            else:
-                pros = full_pros_cons
-            if isinstance(pros, list):
-                pros = "\n".join([str(p) for p in pros])
-            
-            short_desc = crit.get("SHORT_DESCRIPTION", "N/A")
-            if isinstance(short_desc, list):
-                short_desc = "\n- ".join([str(s) for s in short_desc])
-                if short_desc:
-                    short_desc = "- " + short_desc
-
-        # Read local files for Letters and CVs
-        safe_company = "".join([c for c in str(j.get('company', '')) if c.isalnum() or c in (' ', '_')]).strip()
-        output_dir = os.path.join("data", "output", safe_company)
-        
-        lm_text = "Non générée (Score trop bas ou ancienne offre)"
-        lm_path = os.path.join(output_dir, "Cover_Letter.txt")
-        if os.path.exists(lm_path):
-            try:
-                with open(lm_path, "r", encoding="utf-8") as f:
-                    lm_text = f.read()
-            except: pass
-            
-        cv_text = "Non généré"
-        cv_path = os.path.join(output_dir, "CV_Optimization.txt")
-        if os.path.exists(cv_path):
-            try:
-                with open(cv_path, "r", encoding="utf-8") as f:
-                    cv_text = f.read()
-            except: pass
-
-        loc = j.get("location")
-        loc_str = str(loc).split(",")[0] if loc else "Unknown"
+        loc = j.get("lieu")
+        loc_str = str(loc).split(",")[0] if loc else "Inconnu"
 
         df_data.append({
-            "Entreprise": str(j.get("company", "Unknown")),
-            "Poste": str(j.get("title", "Unknown")),
-            "Score IA": score if isinstance(score, (int, float)) else 0,
-            "Localisation": str(loc_str),
-            "Statut": str(j.get("status", "unknown")),
-            "Date d'Ajout": scraped_dt,
-            "Points Forts": str(pros),
-            "À propos de": str(short_desc),
-            "Lettre de Motivation": str(lm_text),
-            "CV Optimisation": str(cv_text),
-            "Lien Annonce": str(j.get("link", "")),
-            "Critique IA": crit
+            "Titre": str(j.get("titre", "Sans Titre")),
+            "Entreprise": str(j.get("entreprise", "Inconnue")),
+            "Statut": str(j.get("statut", "NULL")),
+            "Lieu": str(loc_str),
+            "Score IA": j.get("score_ia", 0),
+            "Lien": str(j.get("lien", "")),
+            "Date": j.get("date", "1970-01-01")
         })
     df = pd.DataFrame(df_data)
-    df["Date d'Ajout"] = pd.to_datetime(df["Date d'Ajout"], errors='coerce')
+    # Ensure Score IA is numeric for progress bar
+    df["Score IA"] = pd.to_numeric(df["Score IA"], errors='coerce').fillna(0).astype(int)
+    df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
 
 # --- ROUTER SYSTEM ---
 if page == "🏠 Control Center":
     st.markdown("### 📈 Entonnoir de Conversion (B2B)")
     if not df.empty:
-        total_jobs = len(df)
-        total_applied = len(df[df["Statut"].isin(["Sent to Notion", "applied_locally", "En Cours", "En Attente", "Entretien", "Offre"])])
+        total_analyzed = len(df)
+        
+        # Validated by AI (Score >= 80) or explicitly active
+        validated_ai = len(df[(df["Score IA"] >= 80) | (df["Statut"].isin(["À postuler", "Postulé", "En cours", "Offre", "Refusé"]))])
+        
+        # Applications actually sent out
+        applications_sent = len(df[df["Statut"].isin(["Postulé", "En cours", "Offre", "Refusé"])])
+        
+        # Interviews secured
+        interviews = len(df[df["Statut"].isin(["En cours", "Offre"])])
+        
+        conversion_rate = (interviews / applications_sent * 100) if applications_sent > 0 else 0
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Offres Scrutées (IA)", total_jobs)
-        c2.metric("Candidatures Validées", total_applied, f"{(total_applied/total_jobs*100):.1f}% Conversion" if total_jobs else "0%")
-        c3.metric("Rejetées par l'IA", total_jobs - total_applied)
-        c4.metric("Engine Health", "100%", "Online" if not engine_is_dead else "Offline")
+        c1.metric("Offres Analysées (IA)", total_analyzed)
+        c2.metric("Validées par l'IA", validated_ai)
+        c3.metric("Candidatures Envoyées", applications_sent)
+        c4.metric("Entretiens Décrochés", interviews, f"{conversion_rate:.1f}% Conv." if applications_sent else "0%")
         
         st.markdown("<br>", unsafe_allow_html=True)
         
+        # Draw Funnel
         fig_funnel = go.Figure(go.Funnel(
-            y=["Total Analysé", "Validé par IA (>80%)"],
-            x=[total_jobs, total_applied],
-            marker={"color": ["#1E3A8A", "#00FFCC"]}
+            y=["Offres Scrutées", "Validées IA (>80%)", "Candidatures Envoyées", "Entretiens"],
+            x=[total_analyzed, validated_ai, applications_sent, interviews],
+            marker={"color": ["#1E3A8A", "#2563EB", "#00FFCC", "#10B981"]}
         ))
         fig_funnel.update_layout(template="plotly_dark", title="Acquisition Funnel")
         
-        status_counts = df[df["Statut"].notna()]["Statut"].value_counts()
-        fig_pie = px.pie(values=status_counts.values, names=status_counts.index, color_discrete_sequence=px.colors.qualitative.Pastel, template="plotly_dark", hole=0.4, title="Distribution des Statuts globaux")
+        # Exclude completely NULL scraped data from the pie chart of Active Statuses
+        active_status_df = df[df["Statut"] != "NULL"]
+        status_counts = active_status_df["Statut"].value_counts()
+        fig_pie = px.pie(values=status_counts.values, names=status_counts.index, color_discrete_sequence=px.colors.qualitative.Pastel, template="plotly_dark", hole=0.4, title="Distribution des Candidatures Actives")
         
         r1, r2 = st.columns(2)
         r1.plotly_chart(fig_funnel, width="stretch")
@@ -399,107 +363,128 @@ elif page == "🎯 Live Hunter":
 elif page == "🗃️ Database":
     db_c1, db_c2 = st.columns([5, 1])
     with db_c1:
-        st.markdown("### 🗃️ SQLite Master Database")
+        st.markdown("### 🗃️ PostgreSQL Master Database")
         st.markdown("L'historique complet, brut et sans censure de chaque job scanné par le bot.")
     with db_c2:
-        if st.button("🔄 Rafraîchir Tableau"):
+        if st.button("🔄 Rafraîchir"):
             st.rerun()
+        
+        # Excel Export Button
+        if not df.empty:
+            import io
+            output = io.BytesIO()
+            export_df = df.copy()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                export_df.to_excel(writer, index=False, sheet_name='Historique Jobs')
+            
+            st.download_button(
+                label="📥 Excel",
+                data=output.getvalue(),
+                file_name=f"stage_hunter_export_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
     if not df.empty:
-        display_df = df[["Lien Annonce", "Score IA", "Statut", "Entreprise", "Poste", "Localisation", "Date d'Ajout", "Points Forts", "À propos de", "Lettre de Motivation", "CV Optimisation"]]
+        # Mirror Notion design: Titre, Entreprise, Statut, Lieu, Score IA, Lien, Date
+        display_df = df[["Titre", "Entreprise", "Statut", "Lieu", "Score IA", "Lien", "Date"]]
         
-        st.data_editor(
-                display_df,
+        def color_status_col(s):
+            colors = []
+            for val in s:
+                if val == "À postuler":
+                    colors.append("background-color: rgba(255, 215, 0, 0.15); color: #FFD700; font-weight: bold;") 
+                elif val == "En cours":
+                    colors.append("background-color: rgba(0, 255, 0, 0.15); color: #00FF00; font-weight: bold;")
+                elif val == "Postulé":
+                    colors.append("background-color: rgba(0, 191, 255, 0.15); color: #00BFFF; font-weight: bold;")
+                elif val == "Entretien":
+                    colors.append("background-color: rgba(218, 112, 214, 0.15); color: #DA70D6; font-weight: bold;")
+                elif val in ["Refusé", "Rejected"]:
+                    colors.append("background-color: rgba(255, 0, 0, 0.15); color: #FF4500; font-weight: bold;")
+                else:
+                    colors.append("")
+            return colors
+            
+        styled_df = display_df.style.apply(color_status_col, subset=["Statut"])
+        
+        st.dataframe(
+                styled_df,
                 column_config={
-                    "Lien Annonce": st.column_config.LinkColumn("Offre", display_text="📍 Ouvrir"),
-                    "Score IA": st.column_config.ProgressColumn("Score IA", format="%d", min_value=0, max_value=100),
-                    "Date d'Ajout": st.column_config.DatetimeColumn("Date", format="DD/MM/YYYY"),
-                    "Points Forts": st.column_config.TextColumn("Points Forts", width="large"),
-                    "À propos de": st.column_config.TextColumn("À propos de", width="large"),
-                    "Lettre de Motivation": st.column_config.TextColumn("Lettre de Motivation", width="large"),
-                    "CV Optimisation": st.column_config.TextColumn("CV Optimisation", width="large")
+                    "Lien": st.column_config.LinkColumn("📍 Lien", display_text="Ouvrir"),
+                    "Score IA": st.column_config.ProgressColumn("⭐ Score IA", format="%d", min_value=0, max_value=100),
+                    "Date": st.column_config.DatetimeColumn("📅 Date", format="DD/MM/YYYY"),
+                    "Statut": st.column_config.TextColumn("📊 Statut")
                 },
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
-                disabled=True, 
                 height=600
             )
             
-        st.markdown("#### 🔍 AI Inspector (Lettres & Critiques locales)")
-        selected_company = st.selectbox("Sélectionne une entreprise pour ouvrir son dossier :", df["Entreprise"].unique())
-        if selected_company:
-            job_rows = df[df["Entreprise"] == selected_company]
-            for _, row in job_rows.iterrows():
-                with st.expander(f"[{row['Score IA']}%] {row['Poste']}"):
-                    t_critique, t_lm, t_cv = st.tabs(["🤖 Critique IA", "📝 Lettre de Motivation", "🛠️ Optimisations CV"])
+        st.markdown("---")
+        st.markdown("### 🔍 AI Inspector")
+        st.markdown("Explorateur détaillé des analyses IA et documents générés métier par métier.")
+        
+        # Group jobs by company for the inspector
+        companies = df["Entreprise"].unique()
+        for company in companies:
+            company_jobs = df[df["Entreprise"] == company]
+            
+            with st.expander(f"🏢 {company} ({len(company_jobs)} offre(s))"):
+                for _, row in company_jobs.iterrows():
+                    st.markdown(f"#### {row['Titre']} ({row['Lieu']} - {row['Score IA']}%)")
+                    st.caption(f"[Ouvrir l'offre originale]({row['Lien']})")
                     
-                    with t_critique:
-                        crit = row['Critique IA']
-                        if crit and isinstance(crit, dict):
+                    t_missions, t_company, t_pros_cons, t_lm, t_cv = st.tabs([
+                        "📝 Missions", "🏢 À Propos", "⚖️ Avantages & Inconvénients", "✉️ Lettre de Motiv", "🛠️ Opti. CV"
+                    ])
+                    
+                    # Parse JSON critique
+                    crit = row.get("critique_ia")
+                    if isinstance(crit, str):
+                        try:
+                            import json
+                            crit = json.loads(crit)
+                        except:
+                            pass
                             
-                            # --- SCORE ---
-                            score_val = crit.get('MATCH_SCORE', row.get('Score IA', 0))
-                            st.progress(int(score_val) / 100, text=f"**Score IA : {score_val}/100**")
-                            st.markdown("---")
-                            
-                            c_good, c_bad = st.columns(2)
-                            
-                            pros_cons = crit.get('PROS_CONS', {})
-                            
-                            # Handle both old string format and new dict format from LLM
-                            if isinstance(pros_cons, dict):
-                                pros_list = pros_cons.get('PROS', [])
-                                cons_list = pros_cons.get('CONS', [])
-                                pros_text = "\n".join([f"✅ {p}" for p in pros_list]) if pros_list else "Aucun point fort identifié."
-                                cons_text = "\n".join([f"❌ {c}" for c in cons_list]) if cons_list else "Aucun point faible identifié."
-                            elif isinstance(pros_cons, str) and pros_cons:
-                                if "Inconvénient" in pros_cons:
-                                    parts = pros_cons.split("Inconvénient")
-                                    pros_text = parts[0].replace("Avantage", "").replace("s :", "").strip()
-                                    cons_text = parts[1].replace("s :", "").strip()
-                                else:
-                                    pros_text = pros_cons
-                                    cons_text = "Non disponible."
-                            else:
-                                pros_text = "Non disponible."
-                                cons_text = "Non disponible."
-                            
-                            with c_good:
-                                st.markdown("**🟢 Points Forts**")
-                                st.success(pros_text)
-                            
-                            with c_bad:
-                                st.markdown("**🔴 Points Faibles**")
-                                st.error(cons_text)
-                            
-                            st.markdown("---")
-                            
-                            # --- MISSING KEYWORDS ---
-                            missing = crit.get('MISSING_KEYWORDS', None)
-                            if missing:
-                                st.markdown("**🔑 Mots-clés Manquants (à ajouter à ton CV)**")
-                                if isinstance(missing, list):
-                                    keywords_md = "  ".join([f"`{k}`" for k in missing])
-                                elif isinstance(missing, str) and missing.lower() not in ["aucun", "none", "n/a", ""]:
-                                    keywords_md = "  ".join([f"`{k.strip()}`" for k in missing.replace(",", "\n").split("\n") if k.strip()])
-                                else:
-                                    keywords_md = "✅ Aucun mot-clé manquant détecté !"
-                                st.warning(keywords_md)
-                            
-                            # --- IMPROVEMENT PLAN ---
-                            plan = crit.get('IMPROVEMENT_PLAN', None)
-                            if plan:
-                                with st.expander("📋 Plan d'amélioration du CV"):
-                                    if isinstance(plan, list):
-                                        for item in plan:
-                                            st.markdown(f"- {item}")
-                                    else:
-                                        st.markdown(str(plan))
+                    if not isinstance(crit, dict):
+                        crit = {}
+                        
+                    with t_missions:
+                        missions = crit.get("SHORT_DESCRIPTION", "Aucune mission détaillée.")
+                        if isinstance(missions, list):
+                            for m in missions:
+                                st.markdown(f"- {m}")
                         else:
-                            st.info("Aucune critique IA disponible pour cette offre (ancienne entrée Notion).")
-                    
-                    # Logic to find local files (same as generator.py safe_company)
-                    safe_company = "".join([c for c in str(row['Entreprise']) if c.isalnum() or c in (' ', '_')]).strip()
+                            st.markdown(missions)
+                            
+                        missing = crit.get("MISSING_KEYWORDS")
+                        if missing and missing != "N/A" and str(missing).lower() != "aucun":
+                            st.warning(f"**Mots-clés manquants au profil:** {missing}")
+                            
+                    with t_company:
+                         st.markdown(crit.get("COMPANY_INFO", "Aucune information supplémentaire."))
+                         
+                    with t_pros_cons:
+                        pros_cons = crit.get("PROS_CONS", {})
+                        if isinstance(pros_cons, dict):
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                st.success("✅ **Points Forts**")
+                                for p in pros_cons.get("PROS", []):
+                                    st.markdown(f"- {p}")
+                            with c2:
+                                st.error("❌ **Points Faibles**")
+                                for c in pros_cons.get("CONS", []):
+                                    st.markdown(f"- {c}")
+                        elif isinstance(pros_cons, str):
+                            st.info(pros_cons)
+                        else:
+                            st.info("Analyse Avantages/Inconvénients non disponible.")
+                            
+                    # Local files
+                    safe_company = "".join([c for c in str(company) if c.isalnum() or c in (' ', '_')]).strip()
                     output_dir = os.path.join("data", "output", safe_company)
                     
                     with t_lm:
@@ -508,7 +493,7 @@ elif page == "🗃️ Database":
                             with open(lm_path, "r", encoding="utf-8") as f:
                                 st.code(f.read(), language="markdown")
                         else:
-                            st.warning("Aucune Lettre de Motivation générée en local (Score IA < 80% ou suppression).")
+                            st.warning("Aucune Lettre de Motivation générée en local.")
                             
                     with t_cv:
                         cv_path = os.path.join(output_dir, "CV_Optimization.txt")
@@ -517,8 +502,10 @@ elif page == "🗃️ Database":
                                 st.code(f.read(), language="markdown")
                         else:
                             st.warning("Aucune Optimisation CV générée en local.")
+                            
+                    st.divider()
     else:
-        st.info("Pipeline is empty.")
+        st.info("Aucune donnée dans la base pour le moment.")
 
 elif page == "✉️ Auto-Mailing":
     st.markdown("### ⏰ Relances Intelligentes (Follow-ups)")

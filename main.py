@@ -25,11 +25,18 @@ def run_search(fresh=False):
     from modules.dashboard import Dashboard
 
     if fresh:
-        config = load_config()
-        db_path = config["paths"]["tracking_db"]
-        if os.path.exists(db_path):
-            os.remove(db_path)
-            print(f"Cleared existing database at {db_path}")
+        try:
+            from modules.db_manager import DBManager
+            db = DBManager()
+            conn = db._get_conn()
+            cursor = conn.cursor()
+            cursor.execute("TRUNCATE TABLE jobs")
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print("Successfully cleared PostgreSQL 'jobs' table for a fresh start.")
+        except Exception as e:
+            print(f"Warning: Could not clear PostgreSQL table: {e}")
 
     dashboard = Dashboard()
     searcher = JobSearch(dashboard=dashboard)

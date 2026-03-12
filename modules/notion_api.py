@@ -227,11 +227,15 @@ class NotionAPI:
                         company_arr = props.get("Entreprise", {}).get("rich_text", [])
                         company = company_arr[0]["text"]["content"] if company_arr else "Inconnue"
                         
-                        loc_arr = props.get("Localisation", {}).get("rich_text", [])
+                        loc_arr = props.get("Lieu", {}).get("rich_text", [])
                         location = loc_arr[0]["text"]["content"] if loc_arr else "Inconnue"
                         
-                        score_obj = props.get("Score IA", {}).get("number")
-                        score = score_obj if score_obj is not None else 0
+                        score_arr = props.get("Score", {}).get("rich_text", [])
+                        score_str = score_arr[0]["text"]["content"] if score_arr else "0%"
+                        try:
+                            score = int(score_str.replace('%', ''))
+                        except:
+                            score = 0
                         
                         link_obj = props.get("Lien", {}).get("url")
                         link = link_obj if link_obj else ""
@@ -241,6 +245,19 @@ class NotionAPI:
                         
                         status = props.get("Statut", {}).get("select", {})
                         status_name = status.get("name") if status else "None"
+                        
+                        critique_arr = props.get("Critique IA", {}).get("rich_text", [])
+                        critique_text = ""
+                        for part in critique_arr:
+                            critique_text += part.get("text", {}).get("content", "")
+                        
+                        # Try to parse as JSON if possible, else keep as string
+                        ai_critique_val = critique_text
+                        if critique_text.startswith('{') and critique_text.endswith('}'):
+                            try:
+                                ai_critique_val = json.loads(critique_text)
+                            except:
+                                pass
                         
                         notion_url = p.get("url", "")
                         
@@ -253,7 +270,8 @@ class NotionAPI:
                             "ai_score": score,
                             "link": link,
                             "timestamp": date_str,
-                            "status": status_name
+                            "status": status_name,
+                            "ai_critique": ai_critique_val
                         })
                     
                     has_more = data.get("has_more", False)

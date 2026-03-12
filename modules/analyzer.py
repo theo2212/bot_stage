@@ -292,3 +292,92 @@ class Analyzer:
         except Exception as e:
             print(f"Error analyzing email: {e}")
             return "IGNORE"
+
+    def analyze_unknown_email(self, email_subject, email_body):
+        """
+        Analyzes an email to determine if it is a job response.
+        If it is, extracts the company name, status, and job title.
+        Returns a JSON object.
+        """
+        import json
+        
+        prompt = f"""
+        Role: Recruitment Extraction Assistant.
+        Task: Analyze the following email to see if it's a direct response to a job application (Confirmation, Rejection, or Interview).
+        
+        EMAIL SUBJECT: {email_subject}
+        EMAIL BODY:
+        {email_body[:2000]}
+        
+        RULES:
+        1. If it's a generic newsletter, LinkedIn job alert, or marketing email, it's NOT a job response.
+        2. Status must be exactly one of: "POSTULE" (application received/confirmed), "REFUS" (rejected/not moving forward), or "ENTRETIEN" (interview requested/technical test).
+        3. Extract the name of the company that sent the email.
+        4. Extract the job title if mentioned, otherwise leave it empty.
+        
+        OUTPUT FORMAT (JSON ONLY):
+        {{
+            "is_job_response": true/false,
+            "company_name": "Name of Company",
+            "status": "POSTULE/REFUS/ENTRETIEN",
+            "job_title": "Title of the job"
+        }}
+        """
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a precise data extractor. Output strictly valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1
+            )
+            content = response.choices[0].message.content.strip()
+            
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+                
+            return json.loads(content)
+        except Exception as e:
+            print(f"Error extracting unknown email: {e}")
+            return {"is_job_response": False}
+
+    def generate_interview_reply_draft(self, company_name, email_body, user_name="Théo Consigny"):
+        """
+        Generates a professional French response to an interview request.
+        """
+        prompt = f"""
+        Rôle: Candidat motivé répondant à une offre d'entretien.
+        Tâche: Rédiger une réponse à l'email suivant de {company_name} me proposant un entretien ou un test technique.
+        
+        SENDER'S EMAIL BODY:
+        {email_body[:3000]}
+        
+        CONSIGNES :
+        1. Rédige l'email en Français. Format formel mais moderne.
+        2. Remercie d'abord l'entreprise pour cette opportunité.
+        3. Confirme ton fort intérêt pour le poste.
+        4. Pour la disponibilité, propose une phrase générique indiquant que tu es très flexible et de proposer des créneaux, ou utilise des variables type "[Insérer mes disponibilités ici]".
+        5. Signe l'email avec le nom : {user_name}
+        6. NE mets PAS de bloc d'objet (Subject), génère uniquement le CORPS de l'email texte.
+        7. NE retourne AUCUN blabla (pas de "Voici l'email:"). UNIQUEMENT le texte de l'email.
+        """
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "Tu es un excellent communicateur professionnel."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"Error generating draft: {e}")
+            return f"Bonjour,\n\nMerci beaucoup pour ce retour positif. Je vous confirme mon fort intérêt pour le poste.\nJe reste à votre disposition pour convenir d'un rendez-vous.\n\nBien à vous,\n{user_name}"
+
+
