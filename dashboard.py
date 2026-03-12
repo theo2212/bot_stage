@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 # Add current dir to path to import modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.db_manager import DBManager
+from modules.config_loader import load_config
 import time
 
 # --- PAGE CONFIGURATION ---
@@ -120,10 +121,7 @@ LIVE_STATE_FILE = os.path.join(BASE_DIR, "data", "live_state.json")
 
 # Remove caching so data represents the live PostgreSQL DB state.
 def load_data():
-    config = {}
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
+    config = load_config(CONFIG_PATH)
             
     try:
         db = DBManager()

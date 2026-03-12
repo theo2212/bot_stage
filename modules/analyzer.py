@@ -3,14 +3,18 @@ import yaml
 import json
 import os
 
+from modules.config_loader import load_config
+
 class Analyzer:
     def __init__(self, config_path="config.yaml"):
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
-        self.api_key = self.config["llm"]["groq_api_key"]
-        self.model_name = self.config["llm"].get("model", "llama3-70b-8192")
+        self.api_key = self.config.get("llm", {}).get("groq_api_key")
+        self.model_name = self.config.get("llm", {}).get("model", "llama-3.3-70b-versatile")
         
+        if not self.api_key:
+            print("[Analyzer] CRITICAL: No API Key found in config or Environment Variables.")
+            
         self.client = groq.Groq(api_key=self.api_key)
 
     def analyze_job_match_json(self, cv_text, job_description, anti_patterns=""):

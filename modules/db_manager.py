@@ -6,10 +6,11 @@ import json
 import yaml
 from datetime import datetime
 
+from modules.config_loader import load_config
+
 class DBManager:
     def __init__(self, config_path="config.yaml", init_db=False):
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         self.pg_config = self.config.get("postgres", {})
         self.sqlite_path = "data/jobs_local.db"
