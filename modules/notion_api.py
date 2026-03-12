@@ -3,10 +3,11 @@ import requests
 import yaml
 from datetime import datetime
 
+from .config_loader import load_config
+
 class NotionAPI:
     def __init__(self, config_path="config.yaml"):
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
             
         self.notion_config = self.config.get("notion", {})
         self.token = self.notion_config.get("token")

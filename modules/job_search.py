@@ -10,13 +10,14 @@ from .notion_api import NotionAPI
 from .db_manager import DBManager
 from concurrent.futures import ThreadPoolExecutor
 
+from .config_loader import load_config
+
 class JobSearch:
     def __init__(self, config_path="config.yaml", dashboard=None):
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         self.dashboard = dashboard
-        self.db_path = self.config["paths"]["tracking_db"]
+        self.db_path = self.config.get("paths", {}).get("tracking_db", "data/jobs_db.json")
         self.db = DBManager(init_db=True)
         self.db.migrate_statuses() # One-time migration to standardize statuses
         self.seen_links = self._load_db()

@@ -1,4 +1,5 @@
 import yaml
+from modules.config_loader import load_config
 import sys
 import os
 import traceback
@@ -14,9 +15,9 @@ STATUS_FILE = os.path.join(BASE_DIR, "data", "scraper_status.json")
 from modules.analyzer import Analyzer
 from modules.utils import extract_text_from_pdf
 
-def load_config():
-    with open("config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+def init_config():
+    # Placeholder for backward compatibility if needed, but we use load_config directly
+    return load_config("config.yaml")
 
 def run_search(fresh=False):
     import time
@@ -38,8 +39,27 @@ def run_search(fresh=False):
         except Exception as e:
             print(f"Warning: Could not clear PostgreSQL table: {e}")
 
+    is_ci = os.environ.get("GITHUB_ACTIONS") == "true"
+    
     dashboard = Dashboard()
     searcher = JobSearch(dashboard=dashboard)
+
+    if is_ci:
+        print("[CI Mode] Starting scraper without rich UI...")
+        dashboard.log("CI Mode Active.")
+        try:
+            searcher.notifier.send_startup_alert()
+        except Exception as e:
+            print(f"Startup alert failed: {e}")
+        
+        # In CI, we just run once and exit
+        print("Starting search cycle...")
+        new_jobs = searcher.run()
+        if new_jobs:
+            print(f"Found {len(new_jobs)} new jobs!")
+        else:
+            print("No new jobs found.")
+        return
 
     with Live(dashboard.generate_layout(), refresh_per_second=4, screen=True) as live:
         dashboard.live_context = live
@@ -213,8 +233,10 @@ def main():
                 from modules.analyzer import Analyzer
                 
                 config = load_config()
-                cv_path = config["paths"]["master_cv"]
-                cv_text = extract_text_from_pdf(cv_path)
+                cv_path = config.get("paths", {}).get("master_cv", "data/resumes/master_cv.pdf")
+                cv_text = ""
+                if os.path.exists(cv_path):
+                    cv_text = extract_text_from_pdf(cv_path)
                 desc = "We need an NLP Engineer..."
                 
                 analyzer = Analyzer(config_path="config.yaml")
