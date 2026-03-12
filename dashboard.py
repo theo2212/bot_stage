@@ -154,7 +154,9 @@ config, jobs = load_data()
 
 # --- SIDEBAR CONTROL ROOM ---
 with st.sidebar:
-    st.image(config.get("discord", {}).get("avatar_url", ""), width=100)
+    avatar_url = config.get("discord", {}).get("avatar_url", "")
+    if avatar_url:
+        st.image(avatar_url, width=100)
     st.markdown(f"**Agent:** {config.get('user_profile', {}).get('name', 'Operator')}")
     st.markdown("---")
     
