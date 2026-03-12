@@ -118,20 +118,37 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATUS_FILE = os.path.join(BASE_DIR, "data", "scraper_status.json")
 LIVE_STATE_FILE = os.path.join(BASE_DIR, "data", "live_state.json")
 
-# Remove caching so data represents the live SQLite DB state.
+# Remove caching so data represents the live PostgreSQL DB state.
 def load_data():
     config = {}
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
             
-    # Fetch live data directly from PostgreSQL
     try:
         db = DBManager()
-        jobs = db.get_all_jobs()
+        if db.connected:
+            jobs = db.get_all_jobs()
+            if db.use_sqlite:
+                st.sidebar.info("🏠 **Base Locale Active** (SQLite)")
+                st.sidebar.caption("Le réseau de l'école bloque Supabase (Port 5432/6543). Vos données sont stockées en local sur ce PC.")
+            else:
+                st.sidebar.success("☁️ **Base Cloud Active** (Supabase)")
+        else:
+            st.sidebar.error("❌ Erreur de base de données")
+            jobs = []
     except Exception as e:
         jobs = []
-        st.sidebar.error(f"PostgreSQL Error: {e}")
+        st.sidebar.warning(f"⚠️ Erreur de chargement : {e}")
+        # Legacy Fallback to JSON if DB fails
+        legacy_path = config.get("paths", {}).get("tracking_db", "data/jobs_db.json")
+        if os.path.exists(legacy_path):
+            try:
+                with open(legacy_path, "r", encoding="utf-8") as f:
+                    jobs = json.load(f)
+                st.sidebar.info("💡 Données chargées depuis le backup local (JSON).")
+            except:
+                pass
         
     return config, jobs
 
@@ -150,8 +167,7 @@ with st.sidebar:
         "🎯 Live Hunter",
         "🗃️ Database",
         "✉️ Auto-Mailing",
-        "📊 Market Insights",
-        "🧠 AI Lab"
+        "⚙️ Configuration"
     ], label_visibility="collapsed")
     
     st.markdown("---")
@@ -207,9 +223,9 @@ with st.sidebar:
     with col_a:
         if current_status == "running":
             # Active button shows as a distinct state but remains clickable to allow "Re-launch/Force"
-            st.button("🟢 RUNNING", disabled=False, key="running_btn", use_container_width=True)
+            st.button("🟢 RUNNING", disabled=False, key="running_btn", width='stretch')
         else:
-            if st.button("▶️ START", type="primary", use_container_width=True):
+            if st.button("▶️ START", type="primary", width='stretch'):
                 set_scraper_status("running")
                 if engine_is_dead:
                     try:
@@ -228,9 +244,9 @@ with st.sidebar:
     with col_b:
         if current_status == "stopped":
             # Active button shows as a distinct state
-            st.button("🔴 STOPPED", disabled=False, key="stopped_btn", use_container_width=True)
+            st.button("🔴 STOPPED", disabled=False, key="stopped_btn", width='stretch')
         else:
-            if st.button("⏹️ STOP", type="primary", use_container_width=True):
+            if st.button("⏹️ STOP", type="primary", width='stretch'):
                 try:
                     # Get PID from the standardized STATUS_FILE
                     if os.path.exists(STATUS_FILE):
@@ -348,7 +364,7 @@ elif page == "🎯 Live Hunter":
                 st.markdown("#### 🔍 Dernières offres vues")
                 live_jobs = state.get('jobs', [])
                 if live_jobs:
-                    st.dataframe(pd.DataFrame(live_jobs), use_container_width=True)
+                    st.dataframe(pd.DataFrame(live_jobs), width='stretch')
                 
             time.sleep(2)
             st.rerun()
@@ -382,7 +398,7 @@ elif page == "🗃️ Database":
                 data=output.getvalue(),
                 file_name=f"stage_hunter_export_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width='stretch'
             )
 
     if not df.empty:
@@ -416,7 +432,7 @@ elif page == "🗃️ Database":
                     "Date": st.column_config.DatetimeColumn("📅 Date", format="DD/MM/YYYY"),
                     "Statut": st.column_config.TextColumn("📊 Statut")
                 },
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 height=600
             )
@@ -452,56 +468,41 @@ elif page == "🗃️ Database":
                         crit = {}
                         
                     with t_missions:
-                        missions = crit.get("SHORT_DESCRIPTION", "Aucune mission détaillée.")
+                        missions = crit.get("short_description") or crit.get("SHORT_DESCRIPTION", "Aucune mission détaillée.")
                         if isinstance(missions, list):
                             for m in missions:
                                 st.markdown(f"- {m}")
                         else:
                             st.markdown(missions)
                             
-                        missing = crit.get("MISSING_KEYWORDS")
+                        missing = crit.get("missing_keywords") or crit.get("MISSING_KEYWORDS")
                         if missing and missing != "N/A" and str(missing).lower() != "aucun":
                             st.warning(f"**Mots-clés manquants au profil:** {missing}")
                             
                     with t_company:
-                         st.markdown(crit.get("COMPANY_INFO", "Aucune information supplémentaire."))
+                         st.markdown(crit.get("company_info") or crit.get("COMPANY_INFO", "Aucune information supplémentaire."))
                          
                     with t_pros_cons:
-                        pros_cons = crit.get("PROS_CONS", {})
-                        if isinstance(pros_cons, dict):
+                        pc_data = crit.get("pros_cons") or crit.get("PROS_CONS", {})
+                        if isinstance(pc_data, dict):
                             c1, c2 = st.columns(2)
+                            # Normalize internal keys just in case
+                            pc_data = {k.lower(): v for k, v in pc_data.items()} if isinstance(pc_data, dict) else pc_data
+                            
                             with c1:
                                 st.success("✅ **Points Forts**")
-                                for p in pros_cons.get("PROS", []):
+                                for p in pc_data.get("pros", []):
                                     st.markdown(f"- {p}")
                             with c2:
                                 st.error("❌ **Points Faibles**")
-                                for c in pros_cons.get("CONS", []):
+                                for c in pc_data.get("cons", []):
                                     st.markdown(f"- {c}")
-                        elif isinstance(pros_cons, str):
-                            st.info(pros_cons)
                         else:
-                            st.info("Analyse Avantages/Inconvénients non disponible.")
-                            
-                    # Local files
-                    safe_company = "".join([c for c in str(company) if c.isalnum() or c in (' ', '_')]).strip()
-                    output_dir = os.path.join("data", "output", safe_company)
-                    
-                    with t_lm:
-                        lm_path = os.path.join(output_dir, "Cover_Letter.txt")
-                        if os.path.exists(lm_path):
-                            with open(lm_path, "r", encoding="utf-8") as f:
-                                st.code(f.read(), language="markdown")
-                        else:
-                            st.warning("Aucune Lettre de Motivation générée en local.")
+                            st.info(str(pc_data))
                             
                     with t_cv:
-                        cv_path = os.path.join(output_dir, "CV_Optimization.txt")
-                        if os.path.exists(cv_path):
-                            with open(cv_path, "r", encoding="utf-8") as f:
-                                st.code(f.read(), language="markdown")
-                        else:
-                            st.warning("Aucune Optimisation CV générée en local.")
+                         opti = crit.get("improvement_plan") or crit.get("IMPROVEMENT_PLAN", "Aucun conseil d'optimisation disponible.")
+                         st.info(opti)
                             
                     st.divider()
     else:
@@ -543,71 +544,109 @@ elif page == "✉️ Auto-Mailing":
         except:
             pass
 
-elif page == "📊 Market Insights":
-    st.markdown("### 📊 Market Insights")
-    st.markdown("Découvre quelles villes et secteurs dominent ton marché.")
-    if not df.empty:
-        c1, c2 = st.columns(2)
-        with c1:
-            loc_counts = df["Localisation"].value_counts().head(10)
-            fig_loc = px.bar(x=loc_counts.index, y=loc_counts.values, template="plotly_dark", title="Top 10 Villes Actives", labels={"x": "Lieu", "y": "Nb Offres"})
-            st.plotly_chart(fig_loc, width="stretch")
-        with c2:
-            # Replaced "Source" logic with "Entreprise" distribution or "Statut" since Source is deprecated
-            status_counts = df["Statut"].value_counts()
-            fig_src = px.pie(values=status_counts.values, names=status_counts.index, template="plotly_dark", title="Distribution globale des Statuts")
-            st.plotly_chart(fig_src, width="stretch")
-    else:
-        st.info("Pas assez de données pour les graphiques.")
-
-elif page == "🧠 AI Lab":
-    st.markdown("### 🧠 Laboratoire d'I.A.")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("##### ⚙️ Configuration Actuelle du Cerveau")
-        st.json({
-            "Core Model": config.get("llm", {}).get("model", "Unknown"),
-            "Temperature": config.get("llm", {}).get("temperature", 0.7),
-            "Job Title": config.get("search", {}).get("keywords", [])[0] if config.get("search", {}).get("keywords") else "None",
-            "Radius (km)": config.get("search", {}).get("distance", 30)
-        })
-    with c2:
-        st.markdown("##### 🚫 Anti-Patterns (Règles d'Exclusion Pédagogiques)")
-        if os.path.exists(ANTI_PATTERNS_PATH):
-            with open(ANTI_PATTERNS_PATH, "r", encoding="utf-8") as f:
-                patterns = f.read()
-            st.code(patterns, language="markdown")
-        else:
-            st.info("Pas d'Anti-Patterns encore enregistrés.")
+elif page == "⚙️ Configuration":
+    st.markdown("### ⚙️ Centre de Configuration")
+    st.markdown("Personnalise le comportement du bot, de la recherche et de la blacklist sans toucher au code.")
+    
+    # Reload config specifically for this page to have latest state
+    try:
+        with open("config.yaml", "r", encoding="utf-8") as f:
+            current_config = yaml.safe_load(f)
+    except Exception as e:
+        st.error(f"Erreur lors de la lecture de config.yaml : {e}")
+        current_config = {}
         
-        if st.button("🧠 Forcer l'Apprentissage IA depuis Notion"):
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("#### 🎯 Ciblage de Recherche")
+        
+        st.write("**Mots-clés (Postes ciblés):**")
+        kws = current_config.get("search", {}).get("keywords", [])
+        df_kws = pd.DataFrame({"Mot-clé": kws})
+        edited_kws = st.data_editor(df_kws, num_rows="dynamic", width='stretch', key="kws_editor")
+        
+        st.write("**Villes / Lieux:**")
+        locs = current_config.get("search", {}).get("locations", [])
+        df_locs = pd.DataFrame({"Lieu": locs})
+        edited_locs = st.data_editor(df_locs, num_rows="dynamic", width='stretch', key="locs_editor")
+        
+    with c2:
+        st.markdown("#### 🚫 Filtres & Apprentissage")
+        st.write("**Entreprises à ignorer (Blacklist):**")
+        bl_comp = current_config.get("blacklist", {}).get("companies", [])
+        df_bl = pd.DataFrame({"Entreprise": bl_comp})
+        edited_bl = st.data_editor(df_bl, num_rows="dynamic", width='stretch', key="bl_editor")
+        
+        st.divider()
+        st.markdown("#### 🧠 Anti-Patterns (IA)")
+        st.markdown("Scanne les entreprises marquées en `NULL` (Refus) dans Notion pour injecter de nouvelles règles d'exclusion dans le cerveau de l'I.A.")
+        
+        # Load current content of the file
+        current_patterns = ""
+        if os.path.exists(ANTI_PATTERNS_PATH):
             try:
-                subprocess.Popen([sys.executable, "main.py", "learn"], cwd=os.getcwd())
-                st.toast("Neural Network Learning launched...", icon="✅")
-            except Exception as e:
-                st.error(str(e))
-
-    # Real-time log display for AI Learning
-    if os.path.exists(LIVE_STATE_FILE):
-        try:
-            with open(LIVE_STATE_FILE, "r", encoding="utf-8") as f:
-                state = json.load(f)
+                with open(ANTI_PATTERNS_PATH, "r", encoding="utf-8") as f:
+                    current_patterns = f.read()
+            except: pass
             
-            logs = state.get("logs", [])
-            status = state.get("status", "")
-            
-            if logs and status in ["Learning...", "Terminé"]:
-                st.markdown("---")
-                st.markdown("##### 🔬 Analyse du Feedback Notion")
-                st.code("\n".join(logs), language="bash")
+        # Display editable text area
+        new_patterns = st.text_area("Règles d'exclusion apprises :", value=current_patterns, height=300, help="Ces règles sont utilisées par l'IA pour filtrer les offres. Tu peux les modifier manuellement.")
+        
+        col_la, col_lb = st.columns(2)
+        with col_la:
+            if st.button("🧠 Lancer l'Apprentissage", width='stretch'):
+                try:
+                    subprocess.Popen([sys.executable, "main.py", "learn"], cwd=os.getcwd())
+                    st.toast("Apprentissage lancé...", icon="🧪")
+                except Exception as e:
+                    st.error(str(e))
+        with col_lb:
+            if st.button("💾 Sauvegarder Patterns", width='stretch'):
+                try:
+                    with open(ANTI_PATTERNS_PATH, "w", encoding="utf-8") as f:
+                        f.write(new_patterns)
+                    st.success("Patterns sauvegardés !")
+                except Exception as e:
+                    st.error(str(e))
+                    
+        # Simple status indicator for learning (removed auto-rerun logs to allow editing)
+        if os.path.exists(LIVE_STATE_FILE):
+            try:
+                with open(LIVE_STATE_FILE, "r", encoding="utf-8") as f:
+                    state_json = json.load(f)
+                if state_json.get("status") == "Learning...":
+                    st.info("L'IA est en train d'analyser Notion... Rafraîchis la page dans un instant pour voir les nouveaux patterns.")
+            except: pass
                 
-                if status == "Learning...":
-                    with st.status("L'IA apprend de tes rejets...", expanded=False):
-                        st.write("Analyse des motifs d'échec...")
-                    import time
-                    time.sleep(2)
-                    st.rerun()
-                else:
-                    st.success("Apprentissage terminé.")
-        except:
-            pass
+    st.markdown("---")
+    
+    # Save Button
+    if st.button("💾 Sauvegarder la Configuration", type="primary", width='stretch'):
+        # Clean edited data
+        new_kws = edited_kws["Mot-clé"].dropna().astype(str).str.strip().tolist()
+        new_kws = [k for k in new_kws if k]
+        
+        new_locs = edited_locs["Lieu"].dropna().astype(str).str.strip().tolist()
+        new_locs = [k for k in new_locs if k]
+        
+        new_bl = edited_bl["Entreprise"].dropna().astype(str).str.strip().tolist()
+        new_bl = [k for k in new_bl if k]
+        
+        # Update current_config
+        if "search" not in current_config:
+            current_config["search"] = {}
+        current_config["search"]["keywords"] = new_kws
+        current_config["search"]["locations"] = new_locs
+        
+        if "blacklist" not in current_config:
+            current_config["blacklist"] = {}
+        current_config["blacklist"]["companies"] = new_bl
+        
+        # Dump back to yaml file
+        try:
+            with open("config.yaml", "w", encoding="utf-8") as f:
+                yaml.dump(current_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            st.success("✅ Configuration sauvegardée avec succès !")
+        except Exception as e:
+            st.error(f"Erreur lors de la sauvegarde: {e}")

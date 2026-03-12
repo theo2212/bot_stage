@@ -8,6 +8,7 @@ from .generator import Generator
 from .utils import extract_text_from_pdf
 from .notion_api import NotionAPI
 from .db_manager import DBManager
+from concurrent.futures import ThreadPoolExecutor
 
 class JobSearch:
     def __init__(self, config_path="config.yaml", dashboard=None):
@@ -16,7 +17,7 @@ class JobSearch:
         
         self.dashboard = dashboard
         self.db_path = self.config["paths"]["tracking_db"]
-        self.db = DBManager()
+        self.db = DBManager(init_db=True)
         self.db.migrate_statuses() # One-time migration to standardize statuses
         self.seen_links = self._load_db()
         self.new_jobs = []
@@ -58,11 +59,11 @@ class JobSearch:
 
     def _load_db(self):
         """
-        Loads the database of seen jobs directly from SQLite.
+        Loads the database of seen jobs directly from PostgreSQL.
         This provides instant local state restoration without Notion API latency.
         """
         if self.dashboard:
-            self.dashboard.log("Loading previously seen jobs from SQLite Database...")
+            self.dashboard.log("Loading previously seen jobs from PostgreSQL Database...")
         try:
             seen_links = self.db.get_all_seen_links()
             if self.dashboard:
@@ -106,7 +107,7 @@ class JobSearch:
                 if not critique_dict:
                     return False
             
-            real_score = critique_dict.get("MATCH_SCORE", 0)
+            real_score = critique_dict.get("match_score", 0)
             job['ai_score'] = real_score
 
             if real_score < 80:
@@ -413,11 +414,24 @@ class JobSearch:
             
     def _filter_candidates(self, results):
         job_pool = []
-        for job in results:
-            title_lower = job['title'].lower()
-            if "stage" not in title_lower and "intern" not in title_lower and "stagiaire" not in title_lower:
-                continue
+        blacklist = self.config.get("blacklist", {}).get("companies", [])
+        
+        # Backward compatibility check for old config key
+        if not blacklist:
+            blacklist = self.config.get("search", {}).get("exclude_companies", [])
             
+        blacklist_lower = [c.lower().strip() for c in blacklist if c]
+            
+        for job in results:
+            # 1. Company Blacklist Filter
+            company = str(job.get('company', '')).lower().strip()
+            if any(b in company for b in blacklist_lower) and company:
+                if self.dashboard: self.dashboard.log(f"Ignoring blacklisted company: {job['company']}")
+                continue
+                
+            # 2. Key Term Filter (relaxed: handled by _passes_quick_filter)
+            if not self._passes_quick_filter(job):
+                continue
             cleaned_link = self._clean_url(job.get("link", ""))
             if cleaned_link and cleaned_link not in self.seen_links:
                 job["link"] = cleaned_link # Normalize right away
@@ -426,28 +440,66 @@ class JobSearch:
                     break
         return job_pool
 
-    def _score_candidates(self, job_pool):
-        scored_jobs = []
-        for job in job_pool:
+    def _passes_quick_filter(self, job):
+        """Fast keyword-based filter to avoid calling LLM for obvious garbage."""
+        if not self.config.get("performance", {}).get("quick_filter", True):
+            return True
+            
+        title = job.get("title", "").lower()
+        desc = job.get("description", "").lower()
+        
+        # Mandatory positive keywords (for internships)
+        positives = ["stage", "intern", "stagiaire", "alternance", "apprenti", "co-op"]
+        if not any(p in title or p in desc for p in positives):
+            return False
+            
+        # Hard negative keywords (e.g. CDD/CDI/Senior if not also mentioning stage)
+        negatives = ["senior engineer", "lead engineer", "directeur", "vp of"]
+        if any(n in title for n in negatives):
+            return False
+            
+        return True
+
+    def _score_single_candidate(self, job):
+        """Worker function for parallel scoring."""
+        try:
+            if not self._passes_quick_filter(job):
+                return None
+                
             base_stub = f"Role: {job['title']} at {job['company']}. Source: {job['source']}.\n\n"
             job_desc_stub = base_stub + (job.get("description") or "No description provided.")
             
             json_match = self.analyzer.analyze_job_match_json(self.cv_text, job_desc_stub, anti_patterns=self.anti_patterns)
             
             if json_match:
-                score = json_match.get("MATCH_SCORE", 0)
+                score = json_match.get("match_score", 0)
                 job['ai_score'] = score
                 job['ai_critique'] = json_match
-                scored_jobs.append(job)
-                if score >= 80 and self.dashboard:
-                    self.dashboard.update_stats(matches=1)
-            
-            if self.dashboard:
-                display_score = job.get('ai_score', 0)
-                self.dashboard.log(f"  - [{display_score:02d}/100] {job['title']} @ {job['company']}")
                 
+                if self.dashboard:
+                    self.dashboard.log(f"  - [{score:02d}/100] {job['title']} @ {job['company']}")
+                    if score >= 80:
+                        self.dashboard.update_stats(matches=1)
+                return job
+        except Exception as e:
+            if self.dashboard:
+                self.dashboard.log(f"Error scoring {job.get('company')}: {e}")
+        return None
+
+    def _score_candidates(self, job_pool):
+        max_threads = self.config.get("performance", {}).get("max_threads", 4)
+        scored_jobs = []
+        
+        if self.dashboard:
+            self.dashboard.log(f"Starting parallel evaluation (Threads: {max_threads})...")
+            
+        with ThreadPoolExecutor(max_workers=max_threads) as executor:
+            results = list(executor.map(self._score_single_candidate, job_pool))
+            
+        scored_jobs = [r for r in results if r is not None]
+        
         # Sort Descending by Score
-        scored_jobs.sort(key=lambda x: x['ai_score'], reverse=True)
+        scored_jobs.sort(key=lambda x: x.get('ai_score', 0), reverse=True)
         return scored_jobs
 
     def run(self):
@@ -467,6 +519,7 @@ class JobSearch:
             self.dashboard.log(f"Target validation for this run: {target_limit} offers")
             
         random.shuffle(keywords)
+        max_threads = self.config.get("performance", {}).get("max_threads", 4)
         
         stop_search = False
         for location in locations:
@@ -487,7 +540,7 @@ class JobSearch:
                         if self.dashboard: self.dashboard.log("No new valid internships here.")
                         continue
                     
-                    # ✅ PRE-SAVE: Immediately write every candidate to SQLite
+                    # ✅ PRE-SAVE: Immediately write every candidate to PostgreSQL
                     for job in job_pool:
                         job['status'] = 'NULL'
                         self.seen_links.add(job["link"])
@@ -500,30 +553,42 @@ class JobSearch:
                     # 2 & 3. Score Candidates & Sort Descending by Score
                     scored_jobs = self._score_candidates(job_pool)
                     
-                    # 4. Process the Top Matches
-                    for job in scored_jobs:
-                        self.new_jobs.append(job)
+                    # 4. Process the Top Matches in Parallel
+                    high_score_jobs = [j for j in scored_jobs if j.get('ai_score', 0) >= 80]
+                    
+                    if high_score_jobs:
+                        if self.dashboard:
+                            self.dashboard.log(f"Processing {len(high_score_jobs)} top matches in parallel...")
                         
-                        # Use standard NULL for low scores
-                        job['status'] = "NULL"
-                        self.db.save_job(job)
-                        
-                        # Update Dashboard Visuals
-                        if self.dashboard and job.get('ai_score', 0) >= 80:
-                            self.dashboard.add_job_row(job['source'], job['company'], job['title'], f"Match: {job['ai_score']}%")
-                        
-                        # PROCESS Heavy (Discord, Notion, CV Generation)
-                        success = self.process_job(job)
-                        if success:
-                            job['status'] = "À postuler"
-                            self.db.save_job(job)
-                            total_found += 1
+                        with ThreadPoolExecutor(max_workers=max_threads) as process_executor:
+                            # Map process_job to the top jobs
+                            # We filter success results later
+                            results = list(process_executor.map(self.process_job, high_score_jobs))
                             
-                        if total_found >= target_limit:
-                            if self.dashboard:
-                                self.dashboard.log(f"Target of {target_limit} top matches reached. Sleeping for 10 min.")
-                            stop_search = True
-                            break
+                            for job, success in zip(high_score_jobs, results):
+                                # Update Dashboard Visuals for top matches
+                                if self.dashboard:
+                                    self.dashboard.add_job_row(job['source'], job['company'], job['title'], f"Match: {job['ai_score']}%")
+                                
+                                self.new_jobs.append(job)
+                                if success:
+                                    job['status'] = "À postuler"
+                                    self.db.save_job(job)
+                                    total_found += 1
+                                else:
+                                    job['status'] = "NULL"
+                                    self.db.save_job(job)
+                                    
+                                if total_found >= target_limit:
+                                    stop_search = True
+                                    break
+                                    
+                    # Still add the low-score jobs to new_jobs list for dashboard visibility if needed
+                    for job in scored_jobs:
+                        if job.get('ai_score', 0) < 80:
+                            self.new_jobs.append(job)
+                            job['status'] = "NULL"
+                            self.db.save_job(job)
                             
                 except Exception as e:
                     if self.dashboard:

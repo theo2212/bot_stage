@@ -47,7 +47,7 @@ class Notifier:
         
         if isinstance(critique_summary, dict):
             if match_score == "N/A":
-                ms = critique_summary.get("MATCH_SCORE", 0)
+                ms = critique_summary.get("match_score", 0)
                 match_score = f"{ms}%"
                 try:
                     score_int = int(ms)
@@ -58,13 +58,14 @@ class Notifier:
                 except:
                     pass
             
-            short_desc = critique_summary.get("SHORT_DESCRIPTION", "N/A")
+            short_desc = critique_summary.get("short_description", "N/A")
             if isinstance(short_desc, list):
                 short_desc = "\n".join([f"- {item}" for item in short_desc])
                 
-            company_info = critique_summary.get("COMPANY_INFO", "N/A")
-            pros_cons = critique_summary.get("PROS_CONS", "N/A")
-            missing_kw = critique_summary.get("MISSING_KEYWORDS", "N/A")
+            company_info = critique_summary.get("company_info", "N/A")
+            pros_cons = critique_summary.get("pros_cons", "N/A")
+            missing_kw = critique_summary.get("missing_keywords", "N/A")
+            improvement_plan = critique_summary.get("improvement_plan", "N/A")
 
         # Location refinement: use city if possible, fallback to job location
         display_location = job.get('location', 'Unknown')

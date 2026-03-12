@@ -78,9 +78,9 @@ class UniversalScraper:
             if self.dashboard: self.dashboard.log(err_msg)
             else: print(err_msg)
             
-        # Anti-ban sleep between aggressive queries
-        sleep_time = random.uniform(3, 7) # Reduced sleep
-        sleep_msg = f"   -> Sleeping {sleep_time:.1f}s..."
+        # Anti-ban sleep - reduced if we have more work to do
+        sleep_time = random.uniform(1.5, 3.5) 
+        sleep_msg = f"   -> Politeness sleep: {sleep_time:.1f}s..."
         if self.dashboard: self.dashboard.log(sleep_msg)
         else: print(sleep_msg)
         time.sleep(sleep_time)

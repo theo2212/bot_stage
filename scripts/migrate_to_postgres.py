@@ -15,7 +15,7 @@ def migrate():
     
     try:
         notion = NotionAPI()
-        db = DBManager()
+        db = DBManager(init_db=True)
     except Exception as e:
         print(f"❌ Error initializing APIs: {e}")
         return
