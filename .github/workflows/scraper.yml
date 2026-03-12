@@ -26,10 +26,14 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install --upgrade pip
-          pip install python-jobspy
-          pip install -r requirements.txt
-          pip list
+          python -m pip install --upgrade pip
+          python -m pip install python-jobspy
+          python -m pip install -r requirements.txt
+          python -m pip list
+
+      - name: Verify Library Presence
+        run: |
+          python -c "import jobspy; print('✅ JobSpy status:', jobspy.__version__ if hasattr(jobspy, '__version__') else 'Installed')"
 
       - name: Run Scraper
         env:
