@@ -12,3 +12,6 @@ webdriver-manager
 rich
 psycopg2-binary
 sqlalchemy
+groq
+streamlit
+plotly
