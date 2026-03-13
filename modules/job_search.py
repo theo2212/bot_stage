@@ -556,11 +556,9 @@ class JobSearch:
                         if self.dashboard: self.dashboard.log("No new valid internships here.")
                         continue
                     
-                    # ✅ PRE-SAVE: Immediately write every candidate to PostgreSQL
+                    # ✅ TRACK: Add to seen_links to avoid processing twice in the same run
                     for job in job_pool:
-                        job['status'] = 'NULL'
                         self.seen_links.add(job["link"])
-                        self.db.save_job(job)
                     
                     if self.dashboard:
                         self.dashboard.update_stats(scanned=len(job_pool))
@@ -591,20 +589,15 @@ class JobSearch:
                                     job['status'] = "À postuler"
                                     self.db.save_job(job)
                                     total_found += 1
-                                else:
-                                    job['status'] = "NULL"
-                                    self.db.save_job(job)
                                     
                                 if total_found >= target_limit:
                                     stop_search = True
                                     break
                                     
-                    # Still add the low-score jobs to new_jobs list for dashboard visibility if needed
+                    # Add low-score jobs to new_jobs list for dashboard visibility, but DON'T save to DB
                     for job in scored_jobs:
                         if job.get('ai_score', 0) < 80:
                             self.new_jobs.append(job)
-                            job['status'] = "NULL"
-                            self.db.save_job(job)
                             
                 except Exception as e:
                     if self.dashboard:
