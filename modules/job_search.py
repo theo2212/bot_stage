@@ -35,11 +35,17 @@ class JobSearch:
         
         # Load CV
         cv_path = self.config.get("paths", {}).get("master_cv", "data/cv.pdf")
-        try:
-            self.cv_text = extract_text_from_pdf(cv_path)
-        except:
-            print("Warning: Could not load CV for generation.")
-            self.cv_text = ""
+        env_cv_text = self.config.get("user_profile", {}).get("cv_text_env")
+        
+        if env_cv_text:
+            print("[CI Mode] Using CV text from environment variable.")
+            self.cv_text = env_cv_text
+        else:
+            try:
+                self.cv_text = extract_text_from_pdf(cv_path)
+            except:
+                print("Warning: Could not load CV for generation.")
+                self.cv_text = ""
 
     # ... (load_db and save_db remain same)
     
@@ -458,8 +464,13 @@ class JobSearch:
         if not any(p in title or p in desc for p in positives):
             return False
             
-        # Hard negative keywords (e.g. CDD/CDI/Senior if not also mentioning stage)
-        negatives = ["senior engineer", "lead engineer", "directeur", "vp of"]
+        # Hard negative keywords (Immediate rejection)
+        negatives = [
+            "senior", "lead", "leadership", "manager", "directeur", "director", 
+            "vp ", "president", "head of", "principal", "architect", "expert",
+            "cdd", "cdi", "freelance"
+        ]
+        # Only reject if these negatives are in the TITLE (we want to allow them in desc if desc says "working with senior")
         if any(n in title for n in negatives):
             return False
             

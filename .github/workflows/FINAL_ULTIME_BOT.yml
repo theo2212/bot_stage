@@ -40,6 +40,7 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SEARCH_KEYWORDS: ${{ secrets.SEARCH_KEYWORDS }}
           SEARCH_LOCATIONS: ${{ secrets.SEARCH_LOCATIONS }}
+          MASTER_CV_TEXT: ${{ secrets.MASTER_CV_TEXT }}
         run: |
           echo "Démarrage du script principal..."
           python -u main.py search

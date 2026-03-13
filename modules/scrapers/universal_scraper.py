@@ -36,10 +36,11 @@ class UniversalScraper:
                 site_name=self.site_names,
                 search_term=search_query,
                 location=single_location,
-                results_wanted=10, # 10 per site is plenty for one keyword
-                hours_old=48, # Expanded to 48 hours to find more hits
-                job_type="internship", # Native JobSpy filter
-                country_dict={"france": "fr"}
+                results_wanted=15, 
+                hours_old=72, # Expanded to find more items if recent are scarce
+                job_type="internship", 
+                country_indeed="france", # Correct parameter for European sites
+                linkedin_fetch_description=True # Crucial for accurate AI filtering
             )
                     
             msg_found = f"   -> Found {len(jobs_df)} raw jobs for this query."
