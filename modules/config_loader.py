@@ -58,6 +58,15 @@ def load_config(config_path="config.yaml"):
         config["paths"].setdefault("master_cv", "data/cv.pdf")
         config["paths"].setdefault("tracking_db", "data/jobs_local.db")
     
+    # User Profile (Default values if missing)
+    if "user_profile" not in config:
+        config["user_profile"] = {
+            "name": "Théo Consigny",
+            "email": "theo.consigny@gmail.com",
+            "phone": "0600000000",
+            "linkedin": "https://linkedin.com/in/theoconsigny"
+        }
+    
     # CV Text Fallback (For CI without physical PDF)
     config["user_profile"]["cv_text_env"] = os.environ.get("MASTER_CV_TEXT", "")
     
