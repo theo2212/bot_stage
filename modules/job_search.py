@@ -558,7 +558,7 @@ class JobSearch:
                     
                     # ✅ PRE-SAVE: Immediately write every candidate to PostgreSQL
                     for job in job_pool:
-                        job['status'] = 'NULL'
+                        job['status'] = 'À postuler'
                         self.seen_links.add(job["link"])
                         self.db.save_job(job)
                     
@@ -592,7 +592,7 @@ class JobSearch:
                                     self.db.save_job(job)
                                     total_found += 1
                                 else:
-                                    job['status'] = "NULL"
+                                    job['status'] = "À postuler"
                                     self.db.save_job(job)
                                     
                                 if total_found >= target_limit:
@@ -603,7 +603,7 @@ class JobSearch:
                     for job in scored_jobs:
                         if job.get('ai_score', 0) < 80:
                             self.new_jobs.append(job)
-                            job['status'] = "NULL"
+                            job['status'] = "À postuler"
                             self.db.save_job(job)
                             
                 except Exception as e:
