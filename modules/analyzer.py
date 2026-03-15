@@ -62,7 +62,7 @@ class Analyzer:
         # Provider Selection & Fallback
         providers = []
         if self.cerebras_client:
-            providers.append(("Cerebras", self.cerebras_client, "llama3.3-70b"))
+            providers.append(("Cerebras", self.cerebras_client, "llama-3.3-70b"))
         if self.groq_client:
             providers.append(("Groq", self.groq_client, self.model_name))
             
