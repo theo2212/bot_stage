@@ -291,7 +291,8 @@ if jobs:
             "Lieu": str(loc_str),
             "Score IA": j.get("score_ia", 0),
             "Lien": str(j.get("lien", "")),
-            "Date": j.get("date", "1970-01-01")
+            "Date": j.get("date", "1970-01-01"),
+            "critique_ia": j.get("critique_ia")
         })
     df = pd.DataFrame(df_data)
     # Ensure Score IA is numeric for progress bar
@@ -468,7 +469,7 @@ elif page == "🗃️ Database":
                         crit = {}
                         
                     with t_missions:
-                        missions = crit.get("short_description") or crit.get("SHORT_DESCRIPTION", "Aucune mission détaillée.")
+                        missions = crit.get("short_description") or crit.get("SHORT_DESCRIPTION") or "Aucune mission détaillée."
                         if isinstance(missions, list):
                             for m in missions:
                                 st.markdown(f"- {m}")
@@ -480,7 +481,7 @@ elif page == "🗃️ Database":
                             st.warning(f"**Mots-clés manquants au profil:** {missing}")
                             
                     with t_company:
-                         st.markdown(crit.get("company_info") or crit.get("COMPANY_INFO", "Aucune information supplémentaire."))
+                         st.markdown(crit.get("company_info") or crit.get("COMPANY_INFO") or "Aucune information supplémentaire.")
                          
                     with t_pros_cons:
                         pc_data = crit.get("pros_cons") or crit.get("PROS_CONS", {})
@@ -508,7 +509,7 @@ elif page == "🗃️ Database":
                              st.toast("Copié !", icon="✅")
 
                     with t_cv:
-                         opti = crit.get("cv_optimization") or crit.get("CV_OPTIMIZATION") or crit.get("improvement_plan") or crit.get("IMPROVEMENT_PLAN", "Aucun conseil d'optimisation disponible.")
+                         opti = crit.get("cv_optimization") or crit.get("CV_OPTIMIZATION") or crit.get("improvement_plan") or crit.get("IMPROVEMENT_PLAN") or "Aucun conseil d'optimisation disponible."
                          st.info(opti)
                             
                     st.divider()
