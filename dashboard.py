@@ -500,8 +500,15 @@ elif page == "🗃️ Database":
                         else:
                             st.info(str(pc_data))
                             
+                    with t_lm:
+                         lm_text = crit.get("cover_letter") or crit.get("COVER_LETTER", "Aucune lettre générée dans cette version.")
+                         st.markdown("##### ✉️ Lettre de Motivation Générée")
+                         st.write(lm_text)
+                         if st.button("📋 Copier la lettre", key=f"btn_lm_{row['Lien']}"):
+                             st.toast("Copié !", icon="✅")
+
                     with t_cv:
-                         opti = crit.get("improvement_plan") or crit.get("IMPROVEMENT_PLAN", "Aucun conseil d'optimisation disponible.")
+                         opti = crit.get("cv_optimization") or crit.get("CV_OPTIMIZATION") or crit.get("improvement_plan") or crit.get("IMPROVEMENT_PLAN", "Aucun conseil d'optimisation disponible.")
                          st.info(opti)
                             
                     st.divider()

@@ -51,7 +51,9 @@ class Analyzer:
                 "cons": ["point faible 1", "point faible 2"]
             }},
             "missing_keywords": "<Mots-clés ou compétences critiques manquants.>",
-            "improvement_plan": "<Plan d'action précis pour décrocher le poste.>"
+            "improvement_plan": "<Plan d'action précis pour décrocher le poste.>",
+            "cover_letter": "<Un corps de lettre de motivation complet, professionnel et hyper-personnalisé (3-4 paragraphes). Utilise les détails du CV pour prouver la valeur du candidat par rapport aux missions de l'offre.>",
+            "cv_optimization": "<Des conseils précis et des blocs de texte à injecter dans le CV (expériences, compétences) pour maximiser le score de match.>"
         }}
         
         Keep text values in French. Do NOT include markdown blocks like ```json around the response, just the raw JSON text.
