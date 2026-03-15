@@ -130,7 +130,7 @@ Date: {vars['date']}
         os.makedirs(target_dir, exist_ok=True)
         txt_file = os.path.join(target_dir, "CV_Optimization.txt")
         
-        
+        content = []
         # If it's just a string (new consolidated format), save it directly
         if isinstance(injection_data, str):
             content.append("CONSEILS D'OPTIMISATION :\n")
