@@ -1,4 +1,5 @@
 import groq
+import cerebras.cloud.sdk
 import yaml
 import json
 import os
@@ -9,13 +10,15 @@ class Analyzer:
     def __init__(self, config_path="config.yaml"):
         self.config = load_config(config_path)
         
-        self.api_key = self.config.get("llm", {}).get("groq_api_key")
+        self.groq_api_key = self.config.get("llm", {}).get("groq_api_key")
+        self.cerebras_api_key = self.config.get("llm", {}).get("cerebras_api_key")
         self.model_name = self.config.get("llm", {}).get("model", "llama-3.3-70b-versatile")
         
-        if not self.api_key:
-            print("[Analyzer] CRITICAL: No API Key found in config or Environment Variables.")
-            
-        self.client = groq.Groq(api_key=self.api_key)
+        self.groq_client = groq.Groq(api_key=self.groq_api_key) if self.groq_api_key else None
+        self.cerebras_client = cerebras.cloud.sdk.Cerebras(api_key=self.cerebras_api_key) if self.cerebras_api_key else None
+
+        if not self.groq_api_key and not self.cerebras_api_key:
+            print("[Analyzer] CRITICAL: No API Keys found.")
 
     def analyze_job_match_json(self, cv_text, job_description, anti_patterns=""):
         """
@@ -54,41 +57,52 @@ class Analyzer:
         Keep text values in French. Do NOT include markdown blocks like ```json around the response, just the raw JSON text.
         """
         
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                response_format={"type": "json_object"}
-            )
-            content = response.choices[0].message.content.strip()
+        # Provider Selection & Fallback
+        providers = []
+        if self.cerebras_client:
+            providers.append(("Cerebras", self.cerebras_client, "llama3.3-70b"))
+        if self.groq_client:
+            providers.append(("Groq", self.groq_client, self.model_name))
             
+        for name, client, model in providers:
             try:
-                # 1. Direct parse
-                result = json.loads(content)
-                # Normalize keys to lowercase for internal consistency
-                if isinstance(result, dict):
-                    result = {k.lower(): v for k, v in result.items()}
-                return result
-            except json.JSONDecodeError:
-                # 2. Try cleaning markdown (fallback)
-                cleaned = content
-                if "```json" in content:
-                    cleaned = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    cleaned = content.split("```")[1].split("```")[0].strip()
+                # print(f"[Analyzer] Trying {name}...")
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
+                )
+                content = response.choices[0].message.content.strip()
                 
                 try:
-                    result = json.loads(cleaned)
+                    # 1. Direct parse
+                    result = json.loads(content)
                     if isinstance(result, dict):
                         result = {k.lower(): v for k, v in result.items()}
                     return result
-                except Exception as e2:
-                    print(f"[Analyzer] Failed to parse JSON from Groq. Content: {content[:200]}... Error: {e2}")
-                    return None
-        except Exception as e:
-            print(f"[Analyzer] Groq API Error: {str(e)}")
-            return None
+                except json.JSONDecodeError:
+                    # 2. Try cleaning markdown (fallback)
+                    cleaned = content
+                    if "```json" in content:
+                        cleaned = content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in content:
+                        cleaned = content.split("```")[1].split("```")[0].strip()
+                    
+                    try:
+                        result = json.loads(cleaned)
+                        if isinstance(result, dict):
+                            result = {k.lower(): v for k, v in result.items()}
+                        return result
+                    except Exception as e2:
+                        print(f"[Analyzer] Failed to parse JSON from {name}. Error: {e2}")
+                        continue # Try next provider
+            except Exception as e:
+                print(f"[Analyzer] {name} API Error: {str(e)}")
+                continue # Try next provider
+                
+        print("[Analyzer] CRITICAL: All AI providers failed.")
+        return None
 
     def detect_language(self, text):
         """
