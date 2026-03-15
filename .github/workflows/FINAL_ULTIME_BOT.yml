@@ -1,4 +1,4 @@
-name: "🔴 BOT FINAL - CLIQUE ICI"
+name: "BOT_STAGE"
 
 on:
   schedule:
@@ -19,20 +19,16 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 📦 3. INSTALLATION DES BIBLIOTHÈQUES (FORCE)
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install python-jobspy requests PyMuPDF python-docx pyyaml openai watchdog beautifulsoup4 pandas openpyxl selenium webdriver-manager rich psycopg2-binary sqlalchemy groq streamlit plotly cerebras-cloud-sdk
-          python -m pip list
-
-      - name: 🧪 4. VÉRIFICATION JOBSPY
-        run: |
-          python -c "import jobspy; print('✅ JOBSPY EST BIEN INSTALLÉ ! Version:', jobspy.__version__ if hasattr(jobspy, '__version__') else 'OK')"
+      #- name: 📦 3. INSTALLATION DES BIBLIOTHÈQUES (FORCE)
+       # run: |
+        #  python -m pip install --upgrade pip
+        #  python -m pip install python-jobspy requests PyMuPDF python-docx pyyaml openai watchdog beautifulsoup4 pandas openpyxl selenium webdriver-manager rich psycopg2-binary sqlalchemy groq streamlit plotly cerebras-cloud-sdk
+        #  python -m pip list
 
       - name: 🚀 5. LANCEMENT DU SCAN
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          CEREBRAS_API_KEY: "csk-tk6npcw838tpv529p3enp89nyhkyweetwvtthpmp43e3kvvy"
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
