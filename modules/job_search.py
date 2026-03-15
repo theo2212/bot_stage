@@ -145,22 +145,16 @@ class JobSearch:
             if app_path: files_to_send.append(app_path)
             if cv_path: files_to_send.append(cv_path)
             
-            # Extract cover letter intro for preview
-            cl_preview = ""
-            try:
-                import json as pyjson
-                cl_data = pyjson.loads(json_content.replace('```json', '').replace('```', '').strip())
-                cl_preview = cl_data.get("intro_paragraph", "")
-            except:
-                pass
+            # Extract cover letter intro for preview (Simple slice since it's already a string)
+            cl_preview = cover_letter_content[:300] + "..." if len(cover_letter_content) > 300 else cover_letter_content
 
             self.notifier.send_job_alert(job, file_paths=files_to_send, critique_summary=critique_dict, cl_preview=cl_preview)
             
             # Sync to Notion
             if hasattr(self, 'notion') and self.notion.token:
                 score_str = str(job.get('ai_score', 'N/A'))
-                # Extract short description from JSON array 
-                short_desc = critique_dict.get("SHORT_DESCRIPTION", "")
+                # Extract short description from JSON
+                short_desc = critique_dict.get("short_description", "")
                 
                 self.notion.add_job_entry(job, score_str, short_desc=short_desc)
                 if self.dashboard:
