@@ -62,13 +62,16 @@ class Analyzer:
         # Provider Selection & Fallback
         providers = []
         if self.cerebras_client:
-            providers.append(("Cerebras", self.cerebras_client, "llama-3.3-70b"))
+            # Try multiple possible IDs for the 70B model to avoid 404s
+            for model_id in ["llama-3.3-70b", "llama3.1-70b", "llama3.1-8b"]:
+                providers.append(("Cerebras", self.cerebras_client, model_id))
+        
         if self.groq_client:
             providers.append(("Groq", self.groq_client, self.model_name))
             
         for name, client, model in providers:
             try:
-                # print(f"[Analyzer] Trying {name}...")
+                # print(f"[Analyzer] Trying {name} with model {model}...")
                 response = client.chat.completions.create(
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
@@ -97,10 +100,14 @@ class Analyzer:
                             result = {k.lower(): v for k, v in result.items()}
                         return result
                     except Exception as e2:
-                        print(f"[Analyzer] Failed to parse JSON from {name}. Error: {e2}")
-                        continue # Try next provider
+                        print(f"[Analyzer] Failed to parse JSON from {name} ({model}). Error: {e2}")
+                        continue # Try next model/provider
             except Exception as e:
-                print(f"[Analyzer] {name} API Error: {str(e)}")
+                # If Cerebras returns 404 (model not found), just continue to next model/provider
+                if "404" in str(e):
+                    # print(f"[Analyzer] Model {model} not found on {name}, trying next...")
+                    continue
+                print(f"[Analyzer] {name} ({model}) API Error: {str(e)}")
                 continue # Try next provider
                 
         print("[Analyzer] CRITICAL: All AI providers failed.")
