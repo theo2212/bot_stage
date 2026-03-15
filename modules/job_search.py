@@ -106,13 +106,13 @@ class JobSearch:
             if self.dashboard:
                 self.dashboard.log(f"Processing {job['company']} ({language.upper()})")
 
-            # A. Extract CV Critique (Cached from earlier JSON analysis)
+            # A. Extract AI Analysis (Now including everything)
             critique_dict = job.get('ai_critique')
             if not critique_dict:
-                # Fallback if somehow not cached
                 critique_dict = self.analyzer.analyze_job_match_json(self.cv_text, job_desc_stub, anti_patterns=self.anti_patterns)
                 if not critique_dict:
                     return False
+                job['ai_critique'] = critique_dict # Cache it
             
             real_score = critique_dict.get("match_score", 0)
             job['ai_score'] = real_score
@@ -122,20 +122,20 @@ class JobSearch:
                     self.dashboard.log(f"Skipping {job['company']}: Match {real_score}% < 80%")
                 return False
 
-            # B. Generate Application (Cover Letter)
-            json_content = self.analyzer.generate_cover_letter(
-                self.cv_text, job_desc_stub, job['company'], job['title'], language=language
-            )
+            # Save to Database IMMEDIATELY after validated match to ensure persistence
+            self.db.save_job(job)
+
+            # B. Generate Application Package (Using data already in critique_dict)
+            cover_letter_content = critique_dict.get("cover_letter", "Lettre de motivation non générée.")
             folder_path = self.generator.create_application_package(
-                job['company'], job['title'], json_content, language=language
+                job['company'], job['title'], cover_letter_content, language=language
             )
             job["status"] = "À postuler"
             app_path = os.path.join(folder_path, "Cover_Letter.txt")
             
-            # C. Generate CV Optimization Blocks (Hybrid Mode)
-            # Full Scan "CV_Optimization.txt"
-            injection_blocks = self.analyzer.tailor_cv(self.cv_text, job_desc_stub, language=language)
-            cv_path = self.generator.create_injection_file(job['company'], injection_blocks)
+            # C. Generate CV Optimization Files (Using data already in critique_dict)
+            cv_opti_content = critique_dict.get("cv_optimization", "Aucun conseil d'optimisation.")
+            cv_path = self.generator.create_injection_file(job['company'], cv_opti_content)
             
             if self.dashboard:
                 self.dashboard.log(f"Generated docs for {job['company']}")
@@ -145,22 +145,16 @@ class JobSearch:
             if app_path: files_to_send.append(app_path)
             if cv_path: files_to_send.append(cv_path)
             
-            # Extract cover letter intro for preview
-            cl_preview = ""
-            try:
-                import json as pyjson
-                cl_data = pyjson.loads(json_content.replace('```json', '').replace('```', '').strip())
-                cl_preview = cl_data.get("intro_paragraph", "")
-            except:
-                pass
+            # Extract cover letter intro for preview (Simple slice since it's already a string)
+            cl_preview = cover_letter_content[:300] + "..." if len(cover_letter_content) > 300 else cover_letter_content
 
             self.notifier.send_job_alert(job, file_paths=files_to_send, critique_summary=critique_dict, cl_preview=cl_preview)
             
             # Sync to Notion
             if hasattr(self, 'notion') and self.notion.token:
                 score_str = str(job.get('ai_score', 'N/A'))
-                # Extract short description from JSON array 
-                short_desc = critique_dict.get("SHORT_DESCRIPTION", "")
+                # Extract short description from JSON
+                short_desc = critique_dict.get("short_description", "")
                 
                 self.notion.add_job_entry(job, score_str, short_desc=short_desc)
                 if self.dashboard:
