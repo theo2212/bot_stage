@@ -108,10 +108,22 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.05);
     }
 
-    /* Auth Styling */
+    /* Auth Styling - Full Screen Center */
+    .stApp > header {
+        display: none !important;
+    }
+    
+    .auth-wrapper {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 80vh;
+        width: 100%;
+    }
+    
     .auth-container {
-        max-width: 450px;
-        margin: 100px auto;
+        width: 100%;
+        max-width: 500px;
         padding: 40px;
         background: rgba(16, 24, 39, 0.7);
         border: 1px solid rgba(0, 255, 204, 0.2);
@@ -122,7 +134,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📈 Stage Hunter 3000 - Ultimate Terminal")
+# st.title removed from here to avoid showing on login page
 
 # --- DATA LOADING ---
 CONFIG_PATH = "config.yaml"
@@ -172,39 +184,47 @@ if 'user' not in st.session_state:
 auth = AuthManager(db_manager=DBManager(init_db=True))
 
 def show_login():
-    st.markdown('<div class="auth-container">', unsafe_allow_html=True)
-    st.title("🔐 Access Portal")
+    # Centering container using streamlit columns as a wrapper
+    _, col, _ = st.columns([1, 2, 1])
     
-    tab_login, tab_reg = st.tabs(["Login", "Register"])
-    
-    with tab_login:
-        with st.form("login_form"):
-            u = st.text_input("Username")
-            p = st.text_input("Password", type="password")
-            if st.form_submit_button("UNAUTHORIZED ACCESS", type="primary", use_container_width=True):
-                user = auth.login_user(u, p)
-                if user:
-                    st.session_state.authenticated = True
-                    st.session_state.user = user
-                    st.success(f"Welcome back, Agent {u}!")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("Invalid Credentials. Access Denied.")
-                    
-    with tab_reg:
-        with st.form("reg_form"):
-            ru = st.text_input("New Username")
-            re = st.text_input("Email")
-            rp = st.text_input("New Password", type="password")
-            rf = st.text_input("Full Name")
-            if st.form_submit_button("INITIALIZE ACCOUNT", type="primary", use_container_width=True):
-                if auth.register_user(ru, rp, re, full_name=rf):
-                    st.success("Account created successfully. You can now login.")
-                else:
-                    st.error("Username already taken or error occurred.")
-                    
-    st.markdown('</div>', unsafe_allow_html=True)
+    with col:
+        st.markdown('<div class="auth-wrapper">', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="auth-header">', unsafe_allow_html=True)
+            st.markdown('<h1>STAGE HUNTER <span class="glow-text">3000</span></h1>', unsafe_allow_html=True)
+            st.markdown('<p style="color: #94A3B8; margin-bottom: 2rem;">ULTIMATE ACCESS TERMINAL</p>', unsafe_allow_html=True)
+            
+            tab_login, tab_reg = st.tabs(["[ LOGIN ]", "[ REGISTER ]"])
+            
+            with tab_login:
+                with st.form("login_form", clear_on_submit=False):
+                    u = st.text_input("CREDENTIAL_ID", placeholder="Username...")
+                    p = st.text_input("ACCESS_KEY", type="password", placeholder="••••••••")
+                    if st.form_submit_button("INITIALIZE SECURE LINK", type="primary", use_container_width=True):
+                        user = auth.login_user(u, p)
+                        if user:
+                            st.session_state.authenticated = True
+                            st.session_state.user = user
+                            st.toast(f"Access Granted: Agent {u}", icon="🔓")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("INVALID CREDENTIALS. RETRY.")
+                            
+            with tab_reg:
+                with st.form("reg_form"):
+                    ru = st.text_input("NEW_AGENT_ID", placeholder="Choose username")
+                    re = st.text_input("COM_LINK", placeholder="Email address")
+                    rp = st.text_input("ENCRYPT_KEY", type="password", placeholder="Strong password")
+                    rf = st.text_input("FULL_NAME", placeholder="Full name")
+                    if st.form_submit_button("GENERATE PROFILE", type="primary", use_container_width=True):
+                        if auth.register_user(ru, rp, re, full_name=rf):
+                            st.success("AGENT REGISTERED. COMMENCING LOGIN.")
+                        else:
+                            st.error("COLLISION DETECTED. ID TAKEN.")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 if not st.session_state.authenticated:
     show_login()
@@ -213,6 +233,8 @@ if not st.session_state.authenticated:
 # Load User Data
 user_data = st.session_state.user
 config, jobs = load_data(user_id=user_data['id'])
+
+st.title("📈 Stage Hunter 3000 - Ultimate Terminal")
 
 # --- SIDEBAR CONTROL ROOM ---
 with st.sidebar:
