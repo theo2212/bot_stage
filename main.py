@@ -1,4 +1,5 @@
 import yaml
+from modules.config_loader import load_config
 import sys
 import os
 import traceback
@@ -7,30 +8,76 @@ from datetime import datetime
 # Add current directory to sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Absolute path constants - shared with dashboard.py
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATUS_FILE = os.path.join(BASE_DIR, "data", "scraper_status.json")
+
 from modules.analyzer import Analyzer
 from modules.utils import extract_text_from_pdf
 
-def load_config():
-    with open("config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+def init_config():
+    # Placeholder for backward compatibility if needed, but we use load_config directly
+    return load_config("config.yaml")
 
 def run_search(fresh=False):
     import time
     from rich.live import Live
     from modules.job_search import JobSearch
+    from modules.auth import AuthManager
+    from modules.db_manager import DBManager
     from modules.dashboard import Dashboard
 
     if fresh:
-        config = load_config()
-        db_path = config["paths"]["tracking_db"]
-        if os.path.exists(db_path):
-            os.remove(db_path)
-            print(f"Cleared existing database at {db_path}")
+        try:
+            from modules.db_manager import DBManager
+            db = DBManager()
+            conn = db._get_conn()
+            cursor = conn.cursor()
+            cursor.execute("TRUNCATE TABLE jobs")
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print("Successfully cleared PostgreSQL 'jobs' table for a fresh start.")
+        except Exception as e:
+            print(f"Warning: Could not clear PostgreSQL table: {e}")
+
+    is_ci = os.environ.get("GITHUB_ACTIONS") == "true"
+    
+    db = DBManager()
+    auth = AuthManager(db_manager=db)
+    
+    # In Multi-User mode, we run for ALL users in the DB
+    conn = db._get_conn()
+    cursor = conn.cursor()
+    if db.use_sqlite:
+        cursor.execute("SELECT id FROM users")
+    else:
+        cursor.execute("SELECT id FROM users")
+    user_ids = [r[0] for r in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+
+    if not user_ids:
+        print("No users found in database. Please register via dashboard first.")
+        return
 
     dashboard = Dashboard()
-    searcher = JobSearch(dashboard=dashboard)
+    
+    for uid in user_ids:
+        user_data = auth.get_user_by_id(uid)
+        print(f"--- Running search for user: {user_data['username']} ---")
+        
+        searcher = JobSearch(dashboard=dashboard, user_id=uid)
+
+        if is_ci:
+            dashboard.log(f"CI Mode Active for {user_data['username']}.")
+            # ... existing CI alert logic ...
+            new_jobs = searcher.run()
+            print(f"Found {len(new_jobs)} new jobs for {user_data['username']}!")
+            continue
 
     with Live(dashboard.generate_layout(), refresh_per_second=4, screen=True) as live:
+        dashboard.live_context = live
         dashboard.log("System initialized.")
         dashboard.set_status("Idle")
         
@@ -47,22 +94,23 @@ def run_search(fresh=False):
                 try:
                     os.makedirs("data", exist_ok=True)
                     current_data = {}
-                    if os.path.exists("data/scraper_status.json"):
-                        with open("data/scraper_status.json", "r") as f:
+                    if os.path.exists(STATUS_FILE):
+                        with open(STATUS_FILE, "r", encoding="utf-8") as f:
                             current_data = json.load(f)
                     current_data["heartbeat"] = time.time()
-                    with open("data/scraper_status.json", "w") as f:
+                    current_data["pid"] = os.getpid()
+                    with open(STATUS_FILE, "w", encoding="utf-8") as f:
                         json.dump(current_data, f)
                 except:
                     pass
-                time.sleep(10)
+                time.sleep(5)
                 
         threading.Thread(target=heartbeat_loop, daemon=True).start()
         
         def get_scraper_status():
             try:
-                if os.path.exists("data/scraper_status.json"):
-                    with open("data/scraper_status.json", "r") as f:
+                if os.path.exists(STATUS_FILE):
+                    with open(STATUS_FILE, "r", encoding="utf-8") as f:
                         return json.load(f).get("status", "stopped")
             except:
                 pass
@@ -70,9 +118,14 @@ def run_search(fresh=False):
 
         def force_status_running():
             try:
-                os.makedirs("data", exist_ok=True)
-                with open("data/scraper_status.json", "w") as f:
-                    json.dump({"status": "running"}, f)
+                os.makedirs(os.path.dirname(STATUS_FILE), exist_ok=True)
+                current_data = {}
+                if os.path.exists(STATUS_FILE):
+                    with open(STATUS_FILE, "r", encoding="utf-8") as f:
+                        current_data = json.load(f)
+                current_data["status"] = "running"
+                with open(STATUS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(current_data, f)
             except:
                 pass
                 
@@ -86,15 +139,19 @@ def run_search(fresh=False):
                 if current_status == "running":
                     live.update(dashboard.generate_layout())
                     
-                    dashboard.set_status("Checking LinkedIn...")
-                    dashboard.log("Starting search cycle...")
-                    
-                    new_jobs = searcher.run()
-                    
-                    if new_jobs:
-                        dashboard.log(f"Found {len(new_jobs)} new jobs!")
-                    else:
-                        dashboard.log("No new jobs found.")
+                    for uid in user_ids:
+                        user_data = auth.get_user_by_id(uid)
+                        searcher = JobSearch(dashboard=dashboard, user_id=uid)
+                        
+                        dashboard.set_status(f"[{user_data['username']}] Checking LinkedIn...")
+                        dashboard.log(f"Starting cycle for {user_data['username']}...")
+                        
+                        new_jobs = searcher.run()
+                        
+                        if new_jobs:
+                            dashboard.log(f"[{user_data['username']}] Found {len(new_jobs)} new jobs!")
+                        else:
+                            dashboard.log(f"[{user_data['username']}] No new jobs.")
                     
                     dashboard.set_status("Sleeping (10min)")
                     
@@ -145,8 +202,12 @@ def main():
             print("--- Mode: Regenerate from DB ---")
             try:
                 from modules.job_search import JobSearch
-                searcher = JobSearch()
+                from modules.dashboard import Dashboard
+                db_dash = Dashboard()
+                db_dash.set_status("Regenerating...")
+                searcher = JobSearch(dashboard=db_dash)
                 searcher.regenerate_from_db()
+                db_dash.set_status("Terminé")
                 print("Regeneration complete.")
             except Exception as e:
                 traceback.print_exc()
@@ -156,8 +217,13 @@ def main():
             print("--- AI Feedback Loop: Learning from Notion 'NULL' Jobs ---")
             try:
                 from modules.job_search import JobSearch
-                searcher = JobSearch()
+                from modules.dashboard import Dashboard
+                learn_dash = Dashboard()
+                learn_dash.set_status("Learning...")
+                searcher = JobSearch(dashboard=learn_dash)
                 searcher.learn_from_rejections()
+                learn_dash.set_status("Terminé")
+                print("Learning complete.")
             except Exception as e:
                 traceback.print_exc()
                 print(f"CRITICAL ERROR IN LEARN: {e}")
@@ -166,8 +232,13 @@ def main():
             print("--- Two-Way Sync: Checking Gmail for Responses ---")
             try:
                 from modules.job_search import JobSearch
-                searcher = JobSearch()
+                from modules.dashboard import Dashboard
+                mail_dash = Dashboard()
+                mail_dash.set_status("Syncing Emails...")
+                searcher = JobSearch(dashboard=mail_dash)
                 searcher.sync_emails()
+                mail_dash.set_status("Prêt")
+                print("Email sync complete.")
             except Exception as e:
                 traceback.print_exc()
                 print(f"CRITICAL ERROR IN MAIL SYNC: {e}")
@@ -181,8 +252,10 @@ def main():
                 from modules.analyzer import Analyzer
                 
                 config = load_config()
-                cv_path = config["paths"]["master_cv"]
-                cv_text = extract_text_from_pdf(cv_path)
+                cv_path = config.get("paths", {}).get("master_cv", "data/resumes/master_cv.pdf")
+                cv_text = ""
+                if os.path.exists(cv_path):
+                    cv_text = extract_text_from_pdf(cv_path)
                 desc = "We need an NLP Engineer..."
                 
                 analyzer = Analyzer(config_path="config.yaml")

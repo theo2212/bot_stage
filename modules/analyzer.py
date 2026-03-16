@@ -1,16 +1,24 @@
-from openai import OpenAI
+import groq
+import cerebras.cloud.sdk
 import yaml
+import json
+import os
+
+from modules.config_loader import load_config
 
 class Analyzer:
     def __init__(self, config_path="config.yaml"):
-        with open(config_path, "r") as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
-        self.client = OpenAI(
-            base_url=self.config["llm"]["base_url"],
-            api_key=self.config["llm"]["api_key"]
-        )
-        self.model = self.config["llm"]["model"]
+        self.groq_api_key = self.config.get("llm", {}).get("groq_api_key")
+        self.cerebras_api_key = self.config.get("llm", {}).get("cerebras_api_key")
+        self.model_name = self.config.get("llm", {}).get("model", "llama-3.3-70b-versatile")
+        
+        self.groq_client = groq.Groq(api_key=self.groq_api_key) if self.groq_api_key else None
+        self.cerebras_client = cerebras.cloud.sdk.Cerebras(api_key=self.cerebras_api_key) if self.cerebras_api_key else None
+
+        if not self.groq_api_key and not self.cerebras_api_key:
+            print("[Analyzer] CRITICAL: No API Keys found.")
 
     def analyze_job_match_json(self, cv_text, job_description, anti_patterns=""):
         """
@@ -19,7 +27,7 @@ class Analyzer:
         """
         anti_patterns_section = ""
         if anti_patterns:
-            anti_patterns_section = f"\nUSER DISLIKES (ANTI-PATTERNS):\n{anti_patterns}\nCRITICAL: If the job matches these anti-patterns, drastically lower the MATCH_SCORE (below 30).\n"
+            anti_patterns_section = f"\nUSER DISLIKES (ANTI-PATTERNS):\n{anti_patterns}\nCRITICAL: If the job matches these anti-patterns, drastically lower the match_score (below 30).\n"
             
         prompt = f"""
         Role: Senior Tech Recruiter.
@@ -35,45 +43,75 @@ class Analyzer:
         
         OUTPUT FORMAT (Respond ONLY with valid JSON):
         {{
-            "MATCH_SCORE": <integer 0-100>,
-            "SHORT_DESCRIPTION": "<4-5 bullet points résumant UNIQUEMENT les missions de l'entreprise tirées de la Job Description. NE PARLE PAS DU CANDIDAT ICI>",
-            "COMPANY_INFO": "<Résumé succinct de l'entreprise>",
-            "PROS_CONS": "<Avantages et inconvénients>",
-            "MISSING_KEYWORDS": "<Mots-clés manquants, ou 'Aucun'>",
-            "IMPROVEMENT_PLAN": "<Plan d'amélioration du CV>"
+            "match_score": <integer 0-100>,
+            "short_description": "<Une liste à puces riche et détaillée (5-8 points) résumant les missions exactes et les défis techniques mentionnés dans l'offre. Ne parle absolument pas du candidat ici.>",
+            "company_info": "<Un paragraphe élégant et complet présentant l'entreprise, son secteur, sa culture et ses ambitions.>",
+            "pros_cons": {{
+                "pros": ["point fort 1", "point fort 2"],
+                "cons": ["point faible 1", "point faible 2"]
+            }},
+            "missing_keywords": "<Mots-clés ou compétences critiques manquants.>",
+            "improvement_plan": "<Plan d'action précis pour décrocher le poste.>",
+            "cover_letter": "<Un corps de lettre de motivation complet, professionnel et hyper-personnalisé (3-4 paragraphes). Utilise les détails du CV pour prouver la valeur du candidat par rapport aux missions de l'offre.>",
+            "cv_optimization": "<Des conseils précis et des blocs de texte à injecter dans le CV (expériences, compétences) pour maximiser le score de match.>"
         }}
         
         Keep text values in French. Do NOT include markdown blocks like ```json around the response, just the raw JSON text.
         """
         
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are an expert career coach for AI/Data jobs. Output strictly in JSON format."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3
-            )
-            content = response.choices[0].message.content.strip()
-            # Clean potential markdown from LLM
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-                
-            import json
+        # Provider Selection & Fallback
+        providers = []
+        if self.cerebras_client:
+            # Try multiple possible IDs for the 70B model to avoid 404s
+            for model_id in ["llama-3.3-70b", "llama3.1-70b", "llama3.1-8b"]:
+                providers.append(("Cerebras", self.cerebras_client, model_id))
+        
+        if self.groq_client:
+            providers.append(("Groq", self.groq_client, self.model_name))
+            
+        for name, client, model in providers:
             try:
-                result = json.loads(content.strip())
-                return result
-            except json.JSONDecodeError:
-                print("Failed to decode JSON from LLM.")
-                return None
-        except Exception as e:
-            print(f"Error contacting LLM: {str(e)}")
-            return None
+                # print(f"[Analyzer] Trying {name} with model {model}...")
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
+                )
+                content = response.choices[0].message.content.strip()
+                
+                try:
+                    # 1. Direct parse
+                    result = json.loads(content)
+                    if isinstance(result, dict):
+                        result = {k.lower(): v for k, v in result.items()}
+                    return result
+                except json.JSONDecodeError:
+                    # 2. Try cleaning markdown (fallback)
+                    cleaned = content
+                    if "```json" in content:
+                        cleaned = content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in content:
+                        cleaned = content.split("```")[1].split("```")[0].strip()
+                    
+                    try:
+                        result = json.loads(cleaned)
+                        if isinstance(result, dict):
+                            result = {k.lower(): v for k, v in result.items()}
+                        return result
+                    except Exception as e2:
+                        print(f"[Analyzer] Failed to parse JSON from {name} ({model}). Error: {e2}")
+                        continue # Try next model/provider
+            except Exception as e:
+                # If Cerebras returns 404 (model not found), just continue to next model/provider
+                if "404" in str(e):
+                    # print(f"[Analyzer] Model {model} not found on {name}, trying next...")
+                    continue
+                print(f"[Analyzer] {name} ({model}) API Error: {str(e)}")
+                continue # Try next provider
+                
+        print("[Analyzer] CRITICAL: All AI providers failed.")
+        return None
 
     def detect_language(self, text):
         """
@@ -124,14 +162,18 @@ class Analyzer:
         
         try:
             response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                response_format={"type": "json_object"}
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content.strip()
+            # If Groq wraps in markdown despite beign asked for JSON only
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+            return content
         except Exception as e:
             return f"{{\"error\": \"{str(e)}\"}}"
 
@@ -187,24 +229,24 @@ class Analyzer:
         }}
         """
         
-        import json
         try:
             response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                response_format={"type": "json_object"}
             )
-            content = response.choices[0].message.content
-             # Clean up Markdown code blocks if present
+            content = response.choices[0].message.content.strip()
+            # Clean up Markdown code blocks if present
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
             
-            return json.loads(content)
+            result = json.loads(content)
+            if isinstance(result, dict):
+                result = {k.lower(): v for k, v in result.items()}
+            return result
         except Exception as e:
             print(f"Error generating CV blocks: {str(e)}")
             return {"optimizations": [], "missing_keywords": ["Error generating data"]}
@@ -232,11 +274,8 @@ class Analyzer:
         
         try:
             response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a concise analytical bot. Find common denominators."},
-                    {"role": "user", "content": prompt}
-                ],
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
                 temperature=0.3
             )
             return response.choices[0].message.content.strip()
@@ -260,22 +299,22 @@ class Analyzer:
         {email_body[:2000]}
         
         RULES:
-        1. If it's an automated "Thank you for applying / We received your application" -> Return "POSTULE"
-        2. If it's a clear rejection ("We regret to inform you", "Nous ne retenons pas") -> Return "REFUS"
-        3. If it's an invitation for a call, an interview, or a technical test -> Return "ENTRETIEN"
-        4. If it's marketing spam, newsletter, or unrelated -> Return "IGNORE"
+        1. **PRIORITIZE THE SUBJECT**: Automated recruitment emails often have clear subjects like "Candidature reçue", "Confirmation", or "Your application". If the subject is definitive, follow its lead.
+        2. "POSTULE" (Confirmation): If the email confirms an application was successfully received.
+        3. "REFUS" (Rejection): Any decline, even polite/vague ones. Keywords: "Malheureusement", "Not moving forward", "Decided to pass", "Other candidates".
+        4. "ENTRETIEN" (Interview/Test): Any request for a meeting or technical test.
+        5. "IGNORE" (Unrelated): LinkedIn Job Alerts, generic invitations to apply, or marketing.
+        
+        CRITICAL: If it's just a LinkedIn job alert or an invite to apply for a *new* job, return "IGNORE".
         
         OUTPUT FORMAT:
-        Return ONLY the single EXACT keyword ("POSTULE", "REFUS", "ENTRETIEN", or "IGNORE"). No other text.
+        Return ONLY the single EXACT keyword ("POSTULE", "REFUS", "ENTRETIEN", or "IGNORE"). Absolutely no other text.
         """
         
         try:
             response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You classify recruitment emails perfectly. Output one keyword only."},
-                    {"role": "user", "content": prompt}
-                ],
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
                 temperature=0.1
             )
             result = response.choices[0].message.content.strip().upper()
@@ -289,3 +328,88 @@ class Analyzer:
         except Exception as e:
             print(f"Error analyzing email: {e}")
             return "IGNORE"
+
+    def analyze_unknown_email(self, email_subject, email_body):
+        """
+        Analyzes an email to determine if it is a job response.
+        If it is, extracts the company name, status, and job title.
+        Returns a JSON object.
+        """
+        prompt = f"""
+        Role: Recruitment Extraction Assistant.
+        Task: Analyze the following email to see if it's a direct response to a job application (Confirmation, Rejection, or Interview).
+        
+        EMAIL SUBJECT: {email_subject}
+        EMAIL BODY:
+        {email_body[:2000]}
+        
+        RULES:
+        1. If it's a generic newsletter, LinkedIn job alert, or marketing email, it's NOT a job response.
+        2. Status must be exactly one of: "POSTULE" (application received/confirmed), "REFUS" (rejected/not moving forward), or "ENTRETIEN" (interview requested/technical test).
+        3. Extract the name of the company that sent the email.
+        4. Extract the job title if mentioned, otherwise leave it empty.
+        
+        OUTPUT FORMAT (JSON ONLY):
+        {{
+            "is_job_response": true/false,
+            "company_name": "Name of Company",
+            "status": "POSTULE/REFUS/ENTRETIEN",
+            "job_title": "Title of the job"
+        }}
+        """
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content.strip()
+            
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+                
+            result = json.loads(content)
+            if isinstance(result, dict):
+                result = {k.lower(): v for k, v in result.items()}
+            return result
+        except Exception as e:
+            print(f"Error extracting unknown email: {e}")
+            return {"is_job_response": False}
+
+    def generate_interview_reply_draft(self, company_name, email_body, user_name="Théo Consigny"):
+        """
+        Generates a professional French response to an interview request.
+        """
+        prompt = f"""
+        Rôle: Candidat motivé répondant à une offre d'entretien.
+        Tâche: Rédiger une réponse à l'email suivant de {company_name} me proposant un entretien ou un test technique.
+        
+        SENDER'S EMAIL BODY:
+        {email_body[:3000]}
+        
+        CONSIGNES :
+        1. Rédige l'email en Français. Format formel mais moderne.
+        2. Remercie d'abord l'entreprise pour cette opportunité.
+        3. Confirme ton fort intérêt pour le poste.
+        4. Pour la disponibilité, propose une phrase générique indiquant que tu es très flexible et de proposer des créneaux, ou utilise des variables type "[Insérer mes disponibilités ici]".
+        5. Signe l'email avec le nom : {user_name}
+        6. NE mets PAS de bloc d'objet (Subject), génère uniquement le CORPS de l'email texte.
+        7. NE retourne AUCUN blabla (pas de "Voici l'email:"). UNIQUEMENT le texte de l'email.
+        """
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"Error generating draft: {e}")
+            return f"Bonjour,\n\nMerci beaucoup pour ce retour positif. Je vous confirme mon fort intérêt pour le poste.\nJe reste à votre disposition pour convenir d'un rendez-vous.\n\nBien à vous,\n{user_name}"
+
+

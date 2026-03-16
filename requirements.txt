@@ -10,3 +10,11 @@ openpyxl
 selenium
 webdriver-manager
 rich
+psycopg2-binary
+sqlalchemy
+groq
+streamlit>=1.40.0
+plotly
+python-jobspy
+cerebras-cloud-sdk
+bcrypt

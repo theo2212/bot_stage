@@ -29,6 +29,8 @@ critique.txt
 # Local trackers & DBs
 data/scraper_status.json
 data/jobs_db.json
+data/*.json
+data/*.db
 data/output/*
 
 # OS generated files
