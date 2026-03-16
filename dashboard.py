@@ -162,10 +162,10 @@ st.markdown("""
 # st.title removed from here to avoid showing on login page
 
 # --- DATA LOADING ---
-CONFIG_PATH = "config.yaml"
-ANTI_PATTERNS_PATH = "data/anti_patterns.txt"
 # Use absolute paths so dashboard and main.py always share the same file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+ANTI_PATTERNS_PATH = os.path.join(BASE_DIR, "data", "anti_patterns.txt")
 STATUS_FILE = os.path.join(BASE_DIR, "data", "scraper_status.json")
 LIVE_STATE_FILE = os.path.join(BASE_DIR, "data", "live_state.json")
 
@@ -676,7 +676,7 @@ elif page == "⚙️ Configuration":
     
     # Reload config specifically for this page to have latest state
     try:
-        with open("config.yaml", "r", encoding="utf-8") as f:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             current_config = yaml.safe_load(f)
     except Exception as e:
         st.error(f"Erreur lors de la lecture de config.yaml : {e}")
@@ -771,7 +771,7 @@ elif page == "⚙️ Configuration":
         
         # Dump back to yaml file
         try:
-            with open("config.yaml", "w", encoding="utf-8") as f:
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                 yaml.dump(current_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
             st.success("✅ Configuration sauvegardée avec succès !")
         except Exception as e:
