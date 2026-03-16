@@ -117,7 +117,7 @@ st.markdown("""
         display: flex;
         justify-content: center;
         align-items: center;
-        margin-top: 5vh;
+        height: 70vh;
         width: 100%;
     }
     

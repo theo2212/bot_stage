@@ -128,6 +128,12 @@ class JobSearch:
             if self.dashboard:
                 self.dashboard.log(f"Processing {job['company']} ({language.upper()})")
 
+            # CV Safety Check
+            if not self.cv_text or len(self.cv_text) < 100:
+                if self.dashboard:
+                    self.dashboard.log(f"⚠️ [User {self.user_id}] CV missing or too short. Skipping AI analysis for {job['company']}.")
+                return False
+
             # A. Extract AI Analysis (Now including everything)
             critique_dict = job.get('ai_critique')
             if not critique_dict:
