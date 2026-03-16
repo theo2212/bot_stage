@@ -11,29 +11,100 @@ import plotly.graph_objects as go
 
 # Add current dir to path to import modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from modules.notion_api import NotionAPI
+from modules.db_manager import DBManager
+from modules.config_loader import load_config
 import time
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Stage Hunter 3000 PRO", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
-# Custom CSS for Trading-Style Metrics
+# Custom CSS for Premium Glassmorphism & Cyberpunk Aesthetics
 st.markdown("""
 <style>
-    div[data-testid="metric-container"] {
-        background-color: #1E1E1E;
-        border: 1px solid #333;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    /* Global Background and Fonts */
+    .stApp {
+        background-color: #0A0F1C;
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Metrics Styling */
+    div[data-testid="stMetric"] {
+        background-color: rgba(16, 24, 39, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 20px;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-5px);
+        border-color: rgba(0, 255, 204, 0.4);
+        box-shadow: 0 10px 40px rgba(0, 255, 204, 0.15);
     }
     div[data-testid="stMetricValue"] {
-        color: #00FFCC;
+        color: #00FFCC !important;
+        font-size: 2.8rem !important;
+        font-weight: 800 !important;
+        text-shadow: 0px 0px 10px rgba(0, 255, 204, 0.3);
     }
+    div[data-testid="stMetricLabel"] {
+        color: #94A3B8 !important;
+        font-size: 1.05rem !important;
+        font-weight: 600 !important;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+    }
+
+    /* Headers */
     h1 {
-        background: -webkit-linear-gradient(45deg, #00FFCC, #4A00E0);
+        background: linear-gradient(135deg, #00FFCC 0%, #3B82F6 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
+        font-weight: 900 !important;
+        font-size: 3.2rem !important;
+        margin-bottom: 1.5rem !important;
+        letter-spacing: -1px;
+    }
+    h3 {
+        color: #F8FAFC !important;
+        font-weight: 700 !important;
+        border-bottom: 2px solid rgba(255,255,255,0.05);
+        padding-bottom: 10px;
+    }
+    
+    /* Buttons */
+    .stButton>button {
+        border-radius: 12px !important;
+        font-weight: 700 !important;
+        height: 3.2rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        border: none !important;
+    }
+    .stButton>button[kind="primary"] {
+        background: linear-gradient(90deg, #3B82F6, #8B5CF6);
+        color: white !important;
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+    }
+    .stButton>button[kind="primary"]:hover {
+        box-shadow: 0 6px 25px rgba(139, 92, 246, 0.5) !important;
+        transform: translateY(-2px);
+    }
+    
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #0E1526;
+        border-right: 1px solid rgba(255,255,255,0.05);
+    }
+    
+    /* DataFrame */
+    div[data-testid="stDataFrame"] {
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(255,255,255,0.05);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -42,31 +113,40 @@ st.title("📈 Stage Hunter 3000 - Ultimate Terminal")
 
 # --- DATA LOADING ---
 CONFIG_PATH = "config.yaml"
-DB_PATH = "data/jobs_db.json"
 ANTI_PATTERNS_PATH = "data/anti_patterns.txt"
+# Use absolute paths so dashboard and main.py always share the same file
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATUS_FILE = os.path.join(BASE_DIR, "data", "scraper_status.json")
+LIVE_STATE_FILE = os.path.join(BASE_DIR, "data", "live_state.json")
 
-@st.cache_data(ttl=30)  # Refresh cache every 30 seconds
+# Remove caching so data represents the live PostgreSQL DB state.
 def load_data():
-    config = {}
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
+    config = load_config(CONFIG_PATH)
             
-    # Fetch live data directly from Notion API
-    notion = NotionAPI(CONFIG_PATH)
-    jobs = notion.get_all_jobs()
-    
-    # Fallback to local DB if Notion fails or is empty
-    if not jobs and os.path.exists(DB_PATH):
-        with open(DB_PATH, "r", encoding="utf-8") as f:
+    try:
+        db = DBManager()
+        if db.connected:
+            jobs = db.get_all_jobs()
+            if db.use_sqlite:
+                st.sidebar.info("🏠 **Base Locale Active** (SQLite)")
+                st.sidebar.caption("Le réseau de l'école bloque Supabase (Port 5432/6543). Vos données sont stockées en local sur ce PC.")
+            else:
+                st.sidebar.success("☁️ **Base Cloud Active** (Supabase)")
+        else:
+            st.sidebar.error("❌ Erreur de base de données")
+            jobs = []
+    except Exception as e:
+        jobs = []
+        st.sidebar.warning(f"⚠️ Erreur de chargement : {e}")
+        # Legacy Fallback to JSON if DB fails
+        legacy_path = config.get("paths", {}).get("tracking_db", "data/jobs_db.json")
+        if os.path.exists(legacy_path):
             try:
-                data = json.load(f)
-                jobs = sorted(data, key=lambda x: x.get('timestamp', ''), reverse=True)
+                with open(legacy_path, "r", encoding="utf-8") as f:
+                    jobs = json.load(f)
+                st.sidebar.info("💡 Données chargées depuis le backup local (JSON).")
             except:
                 pass
-    else:
-        # Sort Notion jobs by timestamp descending
-        jobs = sorted(jobs, key=lambda x: x.get('timestamp', ''), reverse=True)
         
     return config, jobs
 
@@ -74,38 +154,50 @@ config, jobs = load_data()
 
 # --- SIDEBAR CONTROL ROOM ---
 with st.sidebar:
-    st.image(config.get("discord", {}).get("avatar_url", ""), width=100)
+    avatar_url = config.get("discord", {}).get("avatar_url", "")
+    if avatar_url:
+        st.image(avatar_url, width=100)
     st.markdown(f"**Agent:** {config.get('user_profile', {}).get('name', 'Operator')}")
     st.markdown("---")
     
+    # NAVIGATION SYSTEM
+    st.subheader("🧭 NAVIGATION")
+    page = st.radio("Go to Explorer", [
+        "🏠 Control Center",
+        "🎯 Live Hunter",
+        "🗃️ Database",
+        "✉️ Auto-Mailing",
+        "⚙️ Configuration"
+    ], label_visibility="collapsed")
+    
+    st.markdown("---")
     st.subheader("⚡ EXECUTION ENGINE")
     
     def get_scraper_status():
         try:
-            if os.path.exists("data/scraper_status.json"):
-                with open("data/scraper_status.json", "r") as f:
+            if os.path.exists(STATUS_FILE):
+                with open(STATUS_FILE, "r") as f:
                     return json.load(f).get("status", "stopped")
         except:
             pass
         return "stopped"
 
     def set_scraper_status(status):
-        os.makedirs("data", exist_ok=True)
-        # Preserve heartbeat if it exists
+        os.makedirs(os.path.dirname(STATUS_FILE), exist_ok=True)
         current_data = {}
-        if os.path.exists("data/scraper_status.json"):
+        if os.path.exists(STATUS_FILE):
             try:
-                with open("data/scraper_status.json", "r") as f:
+                with open(STATUS_FILE, "r") as f:
                     current_data = json.load(f)
             except:
                 pass
         current_data["status"] = status
-        with open("data/scraper_status.json", "w") as f:
+        with open(STATUS_FILE, "w") as f:
             json.dump(current_data, f)
             
     try:
-        if os.path.exists("data/scraper_status.json"):
-            with open("data/scraper_status.json", "r") as f:
+        if os.path.exists(STATUS_FILE):
+            with open(STATUS_FILE, "r") as f:
                 data = json.load(f)
                 current_status = data.get("status", "stopped")
                 last_heartbeat = data.get("heartbeat", 0)
@@ -116,182 +208,445 @@ with st.sidebar:
         current_status = "stopped"
         last_heartbeat = 0
         
-    engine_is_dead = (time.time() - last_heartbeat) > 30 # Dead if no heartbeat for 30s
+    # Dead if no heartbeat for 60s (Increased from 30s to allow startup time)
+    engine_is_dead = (time.time() - last_heartbeat) > 60 
+    
+    # Auto-correct ghost state: Only if it's been running for a while without heartbeat
+    if engine_is_dead and current_status == "running" and last_heartbeat > 0:
+        current_status = "stopped"
+        set_scraper_status("stopped")
     
     if engine_is_dead:
-        st.error("🚨 **MOTEUR ÉTEINT !**\n\nLe terminal exécutant le bot est fermé. Lance `python main.py search` dans ton terminal pour réactiver le bot.")
+        st.warning("⚠️ **MOTEUR ÉTEINT** : Le processus principal (main.py) ne tourne pas.")
     
     col_a, col_b = st.columns(2)
     with col_a:
         if current_status == "running":
-            st.button("🟢 SCRAPER RUNNING", disabled=True, use_container_width=True)
+            # Active button shows as a distinct state but remains clickable to allow "Re-launch/Force"
+            st.button("🟢 RUNNING", disabled=False, key="running_btn", width='stretch')
         else:
-            if st.button("▶️ START SCRAPER", type="primary", use_container_width=True, disabled=engine_is_dead):
+            if st.button("▶️ START", type="primary", width='stretch'):
                 set_scraper_status("running")
+                if engine_is_dead:
+                    try:
+                        flags = subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+                        script_path = os.path.join(BASE_DIR, "main.py")
+                        subprocess.Popen(
+                            [sys.executable, script_path, "search"], 
+                            cwd=BASE_DIR,
+                            creationflags=flags
+                        )
+                        st.toast("Bot lancé !", icon="🚀")
+                    except Exception as e:
+                        st.error(f"Erreur: {e}")
                 st.rerun()
 
     with col_b:
         if current_status == "stopped":
-            st.button("🔴 SCRAPER STOPPED", disabled=True, use_container_width=True)
+            # Active button shows as a distinct state
+            st.button("🔴 STOPPED", disabled=False, key="stopped_btn", width='stretch')
         else:
-            if st.button("⏹️ STOP SCRAPER", type="primary", use_container_width=True):
-                set_scraper_status("stopped")
-                st.rerun()
-            
-    if st.button("✉️ LAUNCH: Gmail Sync", use_container_width=True):
-        python_exec = sys.executable
-        try:
-            subprocess.Popen([python_exec, "main.py", "mail"], cwd=os.getcwd())
-            st.toast("Email Sync Started!", icon="✅")
-        except Exception as e:
-            st.error(str(e))
-            
-    if st.button("🧠 LAUNCH: AI Learning", use_container_width=True):
-        python_exec = sys.executable
-        try:
-            subprocess.Popen([python_exec, "main.py", "learn"], cwd=os.getcwd())
-            st.toast("Neural Network Learning from Notion...", icon="✅")
-        except Exception as e:
-            st.error(str(e))
+            if st.button("⏹️ STOP", type="primary", width='stretch'):
+                try:
+                    # Get PID from the standardized STATUS_FILE
+                    if os.path.exists(STATUS_FILE):
+                        with open(STATUS_FILE, "r") as f:
+                            data = json.load(f)
+                            pid = data.get("pid")
+                    else:
+                        pid = None
 
-# --- PARSE DATAFRAME ---
+                    set_scraper_status("stopped")
+
+                    if pid:
+                        import subprocess
+                        import signal
+                        if os.name == 'nt':
+                            try:
+                                # Force kill the entire process tree on Windows
+                                subprocess.run(f"taskkill /F /T /PID {pid}", shell=True, capture_output=True, check=False)
+                            except: pass
+                            try: os.kill(pid, signal.SIGTERM)
+                            except: pass
+                        else:
+                            try: os.kill(pid, signal.SIGINT)
+                            except: pass
+                            os.kill(pid, signal.SIGTERM)
+                except Exception as e:
+                    print(f"Error killing process: {e}")
+                st.rerun()
+
+# --- PARSE DATAFRAME FOR INSIGHTS ---
 df = pd.DataFrame()
 if jobs:
     df_data = []
     for j in jobs:
-        score = j.get("ai_score", 0)
-        date_str = j.get("timestamp", "1970-01-01T")[:10]
-        if date_str == "1970-01-01":
-            date_str = None
-            
+        loc = j.get("lieu")
+        loc_str = str(loc).split(",")[0] if loc else "Inconnu"
+
         df_data.append({
-            "Entreprise": j.get("company", "Unknown"),
-            "Poste": j.get("title", "Unknown"),
-            "Score IA": score if isinstance(score, (int, float)) else 0,
-            "Localisation": j.get("location", "Unknown").split(",")[0],
-            "Statut": j.get("status", "unknown"),
-            "Date": date_str,
-            "Lien Annonce": j.get("link", ""),
-            "Lien Notion": j.get("notion_url", "")
+            "Titre": str(j.get("titre", "Sans Titre")),
+            "Entreprise": str(j.get("entreprise", "Inconnue")),
+            "Statut": str(j.get("statut", "NULL")),
+            "Lieu": str(loc_str),
+            "Score IA": j.get("score_ia", 0),
+            "Lien": str(j.get("lien", "")),
+            "Date": j.get("date", "1970-01-01")
         })
     df = pd.DataFrame(df_data)
-    # Convert dates properly, keeping NaT for missing ones
+    # Ensure Score IA is numeric for progress bar
+    df["Score IA"] = pd.to_numeric(df["Score IA"], errors='coerce').fillna(0).astype(int)
     df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
 
-# --- MAIN TABS ---
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Analytics (Funnel)", "💼 Master Pipeline", "⏰ Relances (Follow-ups)", "⚙️ Agent Settings"])
-
-with tab1:
+# --- ROUTER SYSTEM ---
+if page == "🏠 Control Center":
     st.markdown("### 📈 Entonnoir de Conversion (B2B)")
     if not df.empty:
-        # CONVERSION METRICS
-        total_jobs = len(df)
-        total_applied = len(df[df["Statut"].isin(["Postulé", "En Cours", "En Attente", "Entretien", "Offre"])])
-        total_interviews = len(df[df["Statut"].isin(["En Cours", "Entretien", "Offre", "Offre refusée"])])
-        total_rejections = len(df[df["Statut"] == "Refusé"])
+        total_analyzed = len(df)
+        
+        # Validated by AI (Score >= 80) or explicitly active
+        validated_ai = len(df[(df["Score IA"] >= 80) | (df["Statut"].isin(["À postuler", "Postulé", "En cours", "Offre", "Refusé"]))])
+        
+        # Applications actually sent out
+        applications_sent = len(df[df["Statut"].isin(["Postulé", "En cours", "Offre", "Refusé"])])
+        
+        # Interviews secured
+        interviews = len(df[df["Statut"].isin(["En cours", "Offre"])])
+        
+        conversion_rate = (interviews / applications_sent * 100) if applications_sent > 0 else 0
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Offres Sourcées", total_jobs)
-        c2.metric("Candidatures Envoyées", total_applied, f"{(total_applied/total_jobs*100):.1f}% Conversion" if total_jobs else "0%")
-        c3.metric("Entretiens Obtenus", total_interviews, f"{(total_interviews/total_applied*100):.1f}% Conversion" if total_applied else "0%")
-        c4.metric("Refus Essuyés", total_rejections)
+        c1.metric("Offres Analysées (IA)", total_analyzed)
+        c2.metric("Validées par l'IA", validated_ai)
+        c3.metric("Candidatures Envoyées", applications_sent)
+        c4.metric("Entretiens Décrochés", interviews, f"{conversion_rate:.1f}% Conv." if applications_sent else "0%")
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # FUNNEL CHART
+        # Draw Funnel
         fig_funnel = go.Figure(go.Funnel(
-            y=["Offres", "Candidatures", "Entretiens"],
-            x=[total_jobs, total_applied, total_interviews],
-            marker={"color": ["#1E3A8A", "#00FFCC", "#F59E0B"]}
+            y=["Offres Scrutées", "Validées IA (>80%)", "Candidatures Envoyées", "Entretiens"],
+            x=[total_analyzed, validated_ai, applications_sent, interviews],
+            marker={"color": ["#1E3A8A", "#2563EB", "#00FFCC", "#10B981"]}
         ))
-        fig_funnel.update_layout(template="plotly_dark", title="Funnel d'Acquisition de Stage")
+        fig_funnel.update_layout(template="plotly_dark", title="Acquisition Funnel")
         
-        # STATUS DISTRIBUTION
-        status_counts = df[df["Statut"] != "None"]["Statut"].value_counts()
-        fig_pie = px.pie(values=status_counts.values, names=status_counts.index, color_discrete_sequence=px.colors.qualitative.Pastel, template="plotly_dark", hole=0.4, title="Distribution des Statuts")
+        # Exclude completely NULL scraped data from the pie chart of Active Statuses
+        active_status_df = df[df["Statut"] != "NULL"]
+        status_counts = active_status_df["Statut"].value_counts()
+        fig_pie = px.pie(values=status_counts.values, names=status_counts.index, color_discrete_sequence=px.colors.qualitative.Pastel, template="plotly_dark", hole=0.4, title="Distribution des Candidatures Actives")
         
         r1, r2 = st.columns(2)
-        r1.plotly_chart(fig_funnel, use_container_width=True)
-        r2.plotly_chart(fig_pie, use_container_width=True)
+        r1.plotly_chart(fig_funnel, width="stretch")
+        r2.plotly_chart(fig_pie, width="stretch")
     else:
-        st.info("Aucune donnée pour le moment.")
+        st.info("Aucune donnée dans la base locale pour le moment.")
 
-with tab2:
-    st.markdown("### 💼 Grille Active (Data Editor)")
-    if not df.empty:
-        c1, c2 = st.columns([1, 4])
-        with c1:
-            min_score = st.slider("Strictness Filter (Min Score %)", 0, 100, 0)
-            status_filter = st.multiselect("Statuts à afficher", df["Statut"].unique(), default=list(df["Statut"].unique()))
-            
-        with c2:
-            filtered_df = df[(df["Score IA"] >= min_score) & (df["Statut"].isin(status_filter))]
-            display_df = filtered_df[["Score IA", "Statut", "Entreprise", "Poste", "Localisation", "Date", "Lien Annonce", "Lien Notion"]]
-            
-            # Use st.data_editor with specialized ColumnConfig
-            st.data_editor(
-                display_df,
-                column_config={
-                    "Lien Annonce": st.column_config.LinkColumn("Source", display_text="📍 Ouvrir l'offre"),
-                    "Lien Notion": st.column_config.LinkColumn("Notion", display_text="📝 Ouvrir la carte"),
-                    "Score IA": st.column_config.ProgressColumn("Score IA", format="%d", min_value=0, max_value=100),
-                    "Date": st.column_config.DateColumn("Date d'ajout", format="DD/MM/YYYY")
-                },
-                use_container_width=True,
-                hide_index=True,
-                disabled=True, # We disable editing so we don't desync with Notion
-                height=500
-            )
-    else:
-        st.info("Pipeline is empty.")
-
-with tab3:
-    st.markdown("### ⏰ Relances Intelligentes (Follow-ups)")
-    st.markdown("Candidatures envoyées il y a **plus de 7 jours** sans réponse (statut `Postulé` ou `En Attente`).")
+elif page == "🎯 Live Hunter":
+    st.markdown("### 🎯 Live Hunter Dashboard")
+    st.markdown("Vois en temps réel sur quoi l'I.A. est en train de réfléchir.")
     
-    if not df.empty:
-        # Filter for logic: Date is older than 7 days, and status is "Postulé" or "En Attente"
-        seven_days_ago = pd.Timestamp(datetime.now() - timedelta(days=7))
-        follow_up_df = df[
-            (df["Statut"].isin(["Postulé", "En Attente"])) & 
-            (df["Date"].notna()) & 
-            (df["Date"] <= seven_days_ago)
-        ].copy()
+    if current_status == "running":
+        import time
+        try:
+            with open("data/live_state.json", "r", encoding="utf-8") as f:
+                state = json.load(f)
+                
+            st.info(f"**Statut Actuel:** {state.get('status', 'N/A')}")
+            
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.markdown("#### ⚙️ Logs Moteur")
+                logs = state.get('logs', [])
+                st.code("\n".join(logs), language="bash")
+                
+            with c2:
+                st.markdown("#### 🔍 Dernières offres vues")
+                live_jobs = state.get('jobs', [])
+                if live_jobs:
+                    st.dataframe(pd.DataFrame(live_jobs), width='stretch')
+                
+            time.sleep(2)
+            st.rerun()
+            
+        except Exception as e:
+            st.warning("En attente des données du moteur...")
+            time.sleep(2)
+            st.rerun()
+    else:
+        st.info("Le scraper est actuellement arrêté. Lance-le pour voir les logs en direct.")
+    
+elif page == "🗃️ Database":
+    db_c1, db_c2 = st.columns([5, 1])
+    with db_c1:
+        st.markdown("### 🗃️ PostgreSQL Master Database")
+        st.markdown("L'historique complet, brut et sans censure de chaque job scanné par le bot.")
+    with db_c2:
+        if st.button("🔄 Rafraîchir"):
+            st.rerun()
         
-        if not follow_up_df.empty:
-            follow_up_df["Jours d'attente"] = (pd.Timestamp(datetime.now()) - follow_up_df["Date"]).dt.days
+        # Excel Export Button
+        if not df.empty:
+            import io
+            output = io.BytesIO()
+            export_df = df.copy()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                export_df.to_excel(writer, index=False, sheet_name='Historique Jobs')
             
-            st.dataframe(
-                follow_up_df[["Jours d'attente", "Entreprise", "Poste", "Lien Notion"]].sort_values("Jours d'attente", ascending=False),
-                column_config={
-                    "Lien Notion": st.column_config.LinkColumn("Ouvrir", display_text="➡️ Notion")
-                },
-                use_container_width=True,
-                hide_index=True
+            st.download_button(
+                label="📥 Excel",
+                data=output.getvalue(),
+                file_name=f"stage_hunter_export_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width='stretch'
             )
-        else:
-            st.success("Toutes les candidatures récentes sont fraîches ! Aucune relance urgente.")
-    else:
-        st.info("Aucune donnée.")
 
-with tab4:
-    st.markdown("### 🧠 Neural Network & Execution Engine")
-    
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown("##### 🚫 Critical Anti-Patterns (Exclusion Rules)")
-        if os.path.exists(ANTI_PATTERNS_PATH):
-            with open(ANTI_PATTERNS_PATH, "r", encoding="utf-8") as f:
-                patterns = f.read()
-            st.code(patterns, language="markdown")
-        else:
-            st.warning("No patterns learned yet. Mark Notion jobs as 'NULL' and run AI Learning.")
+    if not df.empty:
+        # Mirror Notion design: Titre, Entreprise, Statut, Lieu, Score IA, Lien, Date
+        display_df = df[["Titre", "Entreprise", "Statut", "Lieu", "Score IA", "Lien", "Date"]]
+        
+        def color_status_col(s):
+            colors = []
+            for val in s:
+                if val == "À postuler":
+                    colors.append("background-color: rgba(255, 215, 0, 0.15); color: #FFD700; font-weight: bold;") 
+                elif val == "En cours":
+                    colors.append("background-color: rgba(0, 255, 0, 0.15); color: #00FF00; font-weight: bold;")
+                elif val == "Postulé":
+                    colors.append("background-color: rgba(0, 191, 255, 0.15); color: #00BFFF; font-weight: bold;")
+                elif val == "Entretien":
+                    colors.append("background-color: rgba(218, 112, 214, 0.15); color: #DA70D6; font-weight: bold;")
+                elif val in ["Refusé", "Rejected"]:
+                    colors.append("background-color: rgba(255, 0, 0, 0.15); color: #FF4500; font-weight: bold;")
+                else:
+                    colors.append("")
+            return colors
             
-    with col_b:
-        st.markdown("##### ⚙️ LLM Configuration")
-        st.json({
-            "Model": config.get("llm", {}).get("model", "Unknown"),
-            "Temperature": config.get("llm", {}).get("temperature", 0.7),
-            "Core Target": config.get("search", {}).get("keywords", [])[0] if config.get("search", {}).get("keywords") else "None",
-            "Database ID": config.get("notion", {}).get("database_id", "Hidden")
-        })
+        styled_df = display_df.style.apply(color_status_col, subset=["Statut"])
+        
+        st.dataframe(
+                styled_df,
+                column_config={
+                    "Lien": st.column_config.LinkColumn("📍 Lien", display_text="Ouvrir"),
+                    "Score IA": st.column_config.ProgressColumn("⭐ Score IA", format="%d", min_value=0, max_value=100),
+                    "Date": st.column_config.DatetimeColumn("📅 Date", format="DD/MM/YYYY"),
+                    "Statut": st.column_config.TextColumn("📊 Statut")
+                },
+                width='stretch',
+                hide_index=True,
+                height=600
+            )
+            
+        st.markdown("---")
+        st.markdown("### 🔍 AI Inspector")
+        st.markdown("Explorateur détaillé des analyses IA et documents générés métier par métier.")
+        
+        # Group jobs by company for the inspector
+        companies = df["Entreprise"].unique()
+        for company in companies:
+            company_jobs = df[df["Entreprise"] == company]
+            
+            with st.expander(f"🏢 {company} ({len(company_jobs)} offre(s))"):
+                for _, row in company_jobs.iterrows():
+                    st.markdown(f"#### {row['Titre']} ({row['Lieu']} - {row['Score IA']}%)")
+                    st.caption(f"[Ouvrir l'offre originale]({row['Lien']})")
+                    
+                    t_missions, t_company, t_pros_cons, t_lm, t_cv = st.tabs([
+                        "📝 Missions", "🏢 À Propos", "⚖️ Avantages & Inconvénients", "✉️ Lettre de Motiv", "🛠️ Opti. CV"
+                    ])
+                    
+                    # Parse JSON critique
+                    crit = row.get("critique_ia")
+                    if isinstance(crit, str):
+                        try:
+                            import json
+                            crit = json.loads(crit)
+                        except:
+                            pass
+                            
+                    if not isinstance(crit, dict):
+                        crit = {}
+                        
+                    with t_missions:
+                        missions = crit.get("short_description") or crit.get("SHORT_DESCRIPTION", "Aucune mission détaillée.")
+                        if isinstance(missions, list):
+                            for m in missions:
+                                st.markdown(f"- {m}")
+                        else:
+                            st.markdown(missions)
+                            
+                        missing = crit.get("missing_keywords") or crit.get("MISSING_KEYWORDS")
+                        if missing and missing != "N/A" and str(missing).lower() != "aucun":
+                            st.warning(f"**Mots-clés manquants au profil:** {missing}")
+                            
+                    with t_company:
+                         st.markdown(crit.get("company_info") or crit.get("COMPANY_INFO", "Aucune information supplémentaire."))
+                         
+                    with t_pros_cons:
+                        pc_data = crit.get("pros_cons") or crit.get("PROS_CONS", {})
+                        if isinstance(pc_data, dict):
+                            c1, c2 = st.columns(2)
+                            # Normalize internal keys just in case
+                            pc_data = {k.lower(): v for k, v in pc_data.items()} if isinstance(pc_data, dict) else pc_data
+                            
+                            with c1:
+                                st.success("✅ **Points Forts**")
+                                for p in pc_data.get("pros", []):
+                                    st.markdown(f"- {p}")
+                            with c2:
+                                st.error("❌ **Points Faibles**")
+                                for c in pc_data.get("cons", []):
+                                    st.markdown(f"- {c}")
+                        else:
+                            st.info(str(pc_data))
+                            
+                    with t_cv:
+                         opti = crit.get("improvement_plan") or crit.get("IMPROVEMENT_PLAN", "Aucun conseil d'optimisation disponible.")
+                         st.info(opti)
+                            
+                    st.divider()
+    else:
+        st.info("Aucune donnée dans la base pour le moment.")
+
+elif page == "✉️ Auto-Mailing":
+    st.markdown("### ⏰ Relances Intelligentes (Follow-ups)")
+    st.markdown("Cette interface vérifie ton compte GMAIL pour synchroniser tes candidatures.")
+    
+    if st.button("✉️ Lancer Script Gmail Sync"):
+        try:
+            subprocess.Popen([sys.executable, "main.py", "mail"], cwd=os.getcwd())
+            st.toast("Email Sync Started!", icon="✅")
+        except Exception as e:
+            st.error(str(e))
+
+    # Real-time log display for Mailing Sync
+    if os.path.exists(LIVE_STATE_FILE):
+        try:
+            with open(LIVE_STATE_FILE, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            
+            logs = state.get("logs", [])
+            status = state.get("status", "")
+            
+            if logs:
+                st.markdown("---")
+                st.markdown("##### ⚙️ Logs de Synchronisation")
+                st.code("\n".join(logs), language="bash")
+                
+                if status == "Syncing Emails...":
+                    with st.status("Vérification de Gmail en cours...", expanded=False):
+                        st.write("Le bot analyse tes derniers messages...")
+                    import time
+                    time.sleep(2)
+                    st.rerun()
+                elif status == "Prêt":
+                    st.success("Synchronisation terminée.")
+        except:
+            pass
+
+elif page == "⚙️ Configuration":
+    st.markdown("### ⚙️ Centre de Configuration")
+    st.markdown("Personnalise le comportement du bot, de la recherche et de la blacklist sans toucher au code.")
+    
+    # Reload config specifically for this page to have latest state
+    try:
+        with open("config.yaml", "r", encoding="utf-8") as f:
+            current_config = yaml.safe_load(f)
+    except Exception as e:
+        st.error(f"Erreur lors de la lecture de config.yaml : {e}")
+        current_config = {}
+        
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("#### 🎯 Ciblage de Recherche")
+        
+        st.write("**Mots-clés (Postes ciblés):**")
+        kws = current_config.get("search", {}).get("keywords", [])
+        df_kws = pd.DataFrame({"Mot-clé": kws})
+        edited_kws = st.data_editor(df_kws, num_rows="dynamic", width='stretch', key="kws_editor")
+        
+        st.write("**Villes / Lieux:**")
+        locs = current_config.get("search", {}).get("locations", [])
+        df_locs = pd.DataFrame({"Lieu": locs})
+        edited_locs = st.data_editor(df_locs, num_rows="dynamic", width='stretch', key="locs_editor")
+        
+    with c2:
+        st.markdown("#### 🚫 Filtres & Apprentissage")
+        st.write("**Entreprises à ignorer (Blacklist):**")
+        bl_comp = current_config.get("blacklist", {}).get("companies", [])
+        df_bl = pd.DataFrame({"Entreprise": bl_comp})
+        edited_bl = st.data_editor(df_bl, num_rows="dynamic", width='stretch', key="bl_editor")
+        
+        st.divider()
+        st.markdown("#### 🧠 Anti-Patterns (IA)")
+        st.markdown("Scanne les entreprises marquées en `NULL` (Refus) dans Notion pour injecter de nouvelles règles d'exclusion dans le cerveau de l'I.A.")
+        
+        # Load current content of the file
+        current_patterns = ""
+        if os.path.exists(ANTI_PATTERNS_PATH):
+            try:
+                with open(ANTI_PATTERNS_PATH, "r", encoding="utf-8") as f:
+                    current_patterns = f.read()
+            except: pass
+            
+        # Display editable text area
+        new_patterns = st.text_area("Règles d'exclusion apprises :", value=current_patterns, height=300, help="Ces règles sont utilisées par l'IA pour filtrer les offres. Tu peux les modifier manuellement.")
+        
+        col_la, col_lb = st.columns(2)
+        with col_la:
+            if st.button("🧠 Lancer l'Apprentissage", width='stretch'):
+                try:
+                    subprocess.Popen([sys.executable, "main.py", "learn"], cwd=os.getcwd())
+                    st.toast("Apprentissage lancé...", icon="🧪")
+                except Exception as e:
+                    st.error(str(e))
+        with col_lb:
+            if st.button("💾 Sauvegarder Patterns", width='stretch'):
+                try:
+                    with open(ANTI_PATTERNS_PATH, "w", encoding="utf-8") as f:
+                        f.write(new_patterns)
+                    st.success("Patterns sauvegardés !")
+                except Exception as e:
+                    st.error(str(e))
+                    
+        # Simple status indicator for learning (removed auto-rerun logs to allow editing)
+        if os.path.exists(LIVE_STATE_FILE):
+            try:
+                with open(LIVE_STATE_FILE, "r", encoding="utf-8") as f:
+                    state_json = json.load(f)
+                if state_json.get("status") == "Learning...":
+                    st.info("L'IA est en train d'analyser Notion... Rafraîchis la page dans un instant pour voir les nouveaux patterns.")
+            except: pass
+                
+    st.markdown("---")
+    
+    # Save Button
+    if st.button("💾 Sauvegarder la Configuration", type="primary", width='stretch'):
+        # Clean edited data
+        new_kws = edited_kws["Mot-clé"].dropna().astype(str).str.strip().tolist()
+        new_kws = [k for k in new_kws if k]
+        
+        new_locs = edited_locs["Lieu"].dropna().astype(str).str.strip().tolist()
+        new_locs = [k for k in new_locs if k]
+        
+        new_bl = edited_bl["Entreprise"].dropna().astype(str).str.strip().tolist()
+        new_bl = [k for k in new_bl if k]
+        
+        # Update current_config
+        if "search" not in current_config:
+            current_config["search"] = {}
+        current_config["search"]["keywords"] = new_kws
+        current_config["search"]["locations"] = new_locs
+        
+        if "blacklist" not in current_config:
+            current_config["blacklist"] = {}
+        current_config["blacklist"]["companies"] = new_bl
+        
+        # Dump back to yaml file
+        try:
+            with open("config.yaml", "w", encoding="utf-8") as f:
+                yaml.dump(current_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            st.success("✅ Configuration sauvegardée avec succès !")
+        except Exception as e:
+            st.error(f"Erreur lors de la sauvegarde: {e}")
