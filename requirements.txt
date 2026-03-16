@@ -16,3 +16,4 @@ groq
 streamlit>=1.40.0
 plotly
 python-jobspy
+cerebras-cloud-sdk

@@ -28,12 +28,14 @@ class Generator:
         elif "```" in cover_letter_json_str:
             cover_letter_json_str = cover_letter_json_str.split("```")[1].split("```")[0].strip()
             
-        # Parse content
-        try:
-            content = json.loads(cover_letter_json_str)
-        except json.JSONDecodeError:
-            print("Error decoding JSON from LLM. Saving raw text.")
-            content = {"body_paragraph_1": cover_letter_json_str}
+        # Parse content if it's JSON, otherwise treat as raw text
+        if isinstance(cover_letter_json_str, dict):
+            content = cover_letter_json_str
+        else:
+            try:
+                content = json.loads(cover_letter_json_str)
+            except:
+                content = {"body_paragraph_1": cover_letter_json_str}
 
         # Localized Strings
         if language == "fr":
@@ -128,48 +130,32 @@ Date: {vars['date']}
         os.makedirs(target_dir, exist_ok=True)
         txt_file = os.path.join(target_dir, "CV_Optimization.txt")
         
-        
-        # Header
-        content = [
-            "=" * 80,
-            f"🚀 OPTIMISATION CV : {company_name.upper()}",
-            "=" * 80,
-            "",
-            "MISSING KEYWORDS:",
-            f"{', '.join(injection_data.get('missing_keywords', []))}",
-            "",
-            "-" * 80,
-            "INSTRUCTIONS DE MODIFICATION",
-            "-" * 80,
-            ""
-        ]
-        
-        # Optimizations Loop
-        opts = injection_data.get("optimizations", [])
-        if not opts:
-            content.append("Aucune optimisation spécifique détectée.")
+        content = []
+        # If it's just a string (new consolidated format), save it directly
+        if isinstance(injection_data, str):
+            content.append("CONSEILS D'OPTIMISATION :\n")
+            content.append(injection_data)
         else:
-            for i, opt in enumerate(opts, 1):
-                section = opt.get('section', 'Section Inconnue')
-                original = opt.get('original', '').strip()
-                replacement = opt.get('replacement', '').strip()
-                reason = opt.get('reason', '')
-                
-                block = f"""
-# {i}. SECTION : {section.upper()}
-(Pourquoi : {reason})
+            # Legacy JSON handling
+            # MISSING KEYWORDS
+            content.append("MISSING KEYWORDS:")
+            content.append(f"{', '.join(injection_data.get('missing_keywords', []))}\n")
+            content.append("-" * 80)
+            content.append("INSTRUCTIONS DE MODIFICATION\n")
+            
+            opts = injection_data.get("optimizations", [])
+            if not opts:
+                content.append("Aucune optimisation spécifique détectée.")
+            else:
+                for i, opt in enumerate(opts, 1):
+                    section = opt.get('section', 'Section Inconnue')
+                    original = opt.get('original', '').strip()
+                    replacement = opt.get('replacement', '').strip()
+                    reason = opt.get('reason', '')
+                    block = f"# {i}. SECTION : {section.upper()}\n(Pourquoi : {reason})\n\n🔍 RECHERCHER (CTRL+F) :\n{original}\n\n📋 REMPLACER PAR :\n{replacement}\n\n"
+                    content.append(block)
 
-🔍 RECHERCHER (CTRL+F) :
-{original}
-
-📋 REMPLACER PAR :
-{replacement}
-
---------------------------------------------------------------------------------
-"""
-                content.append(block)
-
-        content.append("\nAstuce : Utilise CTRL+F dans Canva pour trouver le texte à remplacer rapidement.")
+        content.append("\nAstuce : Utilise ces conseils pour adapter ton CV à l'offre.")
 
         with open(txt_file, "w", encoding="utf-8") as f:
             f.write("\n".join(content))

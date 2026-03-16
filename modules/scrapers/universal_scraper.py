@@ -2,6 +2,7 @@ import pandas as pd
 from jobspy import scrape_jobs
 import time
 import random
+from modules.utils.text_cleaner import TextCleaner
 
 class UniversalScraper:
     def __init__(self, config, dashboard=None):
@@ -57,10 +58,9 @@ class UniversalScraper:
                     # Clean the URL (prefer direct if available)
                     final_url = str(job_url_direct) if pd.notna(job_url_direct) else str(job_url)
                     
-                    # Description cleanup
+                    # Description cleanup & optimization
                     desc = str(row.get("description", ""))
-                    # Remove excessive whitespace to save LLM tokens
-                    desc = " ".join(desc.split())
+                    desc = TextCleaner.clean_description(desc)
                     
                     harmonized_job = {
                         "title": str(row.get("title", "Titre inconnu")),

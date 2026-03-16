@@ -22,6 +22,7 @@ def load_config(config_path="config.yaml"):
     # LLM
     if "llm" not in config: config["llm"] = {}
     config["llm"]["groq_api_key"] = os.environ.get("GROQ_API_KEY", config["llm"].get("groq_api_key"))
+    config["llm"]["cerebras_api_key"] = os.environ.get("CEREBRAS_API_KEY", config["llm"].get("cerebras_api_key"))
     config["llm"]["model"] = os.environ.get("LLM_MODEL", config["llm"].get("model", "llama-3.3-70b-versatile"))
     
     # Postgres
