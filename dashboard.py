@@ -675,12 +675,13 @@ elif page == "⚙️ Configuration":
     st.markdown("Personnalise le comportement du bot, de la recherche et de la blacklist sans toucher au code.")
     
     # Reload config specifically for this page to have latest state
+    current_config = {}
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            current_config = yaml.safe_load(f)
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                current_config = yaml.safe_load(f) or {}
     except Exception as e:
         st.error(f"Erreur lors de la lecture de config.yaml : {e}")
-        current_config = {}
         
     c1, c2 = st.columns(2)
     
