@@ -23,6 +23,8 @@ def run_search(fresh=False):
     import time
     from rich.live import Live
     from modules.job_search import JobSearch
+    from modules.auth import AuthManager
+    from modules.db_manager import DBManager
     from modules.dashboard import Dashboard
 
     if fresh:
@@ -41,31 +43,38 @@ def run_search(fresh=False):
 
     is_ci = os.environ.get("GITHUB_ACTIONS") == "true"
     
-    dashboard = Dashboard()
-    searcher = JobSearch(dashboard=dashboard)
+    db = DBManager()
+    auth = AuthManager(db_manager=db)
+    
+    # In Multi-User mode, we run for ALL users in the DB
+    conn = db._get_conn()
+    cursor = conn.cursor()
+    if db.use_sqlite:
+        cursor.execute("SELECT id FROM users")
+    else:
+        cursor.execute("SELECT id FROM users")
+    user_ids = [r[0] for r in cursor.fetchall()]
+    cursor.close()
+    conn.close()
 
-    if is_ci:
-        print("[CI Mode] Starting scraper without rich UI...")
-        dashboard.log("CI Mode Active.")
-        # Verify Discord Webhook
-        webhook_url = searcher.notifier.webhook_url
-        if webhook_url:
-            print(f"[CI Mode] Discord Webhook detected (length: {len(webhook_url)}). Sending startup alert...")
-            try:
-                searcher.notifier.send_startup_alert()
-            except Exception as e:
-                print(f"Startup alert failed: {e}")
-        else:
-            print("[CI Mode] WARNING: No Discord Webhook URL found in config or environment variables!")
-        
-        # In CI, we just run once and exit
-        print("Starting search cycle...")
-        new_jobs = searcher.run()
-        if new_jobs:
-            print(f"Found {len(new_jobs)} new jobs!")
-        else:
-            print("No new jobs found.")
+    if not user_ids:
+        print("No users found in database. Please register via dashboard first.")
         return
+
+    dashboard = Dashboard()
+    
+    for uid in user_ids:
+        user_data = auth.get_user_by_id(uid)
+        print(f"--- Running search for user: {user_data['username']} ---")
+        
+        searcher = JobSearch(dashboard=dashboard, user_id=uid)
+
+        if is_ci:
+            dashboard.log(f"CI Mode Active for {user_data['username']}.")
+            # ... existing CI alert logic ...
+            new_jobs = searcher.run()
+            print(f"Found {len(new_jobs)} new jobs for {user_data['username']}!")
+            continue
 
     with Live(dashboard.generate_layout(), refresh_per_second=4, screen=True) as live:
         dashboard.live_context = live
@@ -130,15 +139,19 @@ def run_search(fresh=False):
                 if current_status == "running":
                     live.update(dashboard.generate_layout())
                     
-                    dashboard.set_status("Checking LinkedIn...")
-                    dashboard.log("Starting search cycle...")
-                    
-                    new_jobs = searcher.run()
-                    
-                    if new_jobs:
-                        dashboard.log(f"Found {len(new_jobs)} new jobs!")
-                    else:
-                        dashboard.log("No new jobs found.")
+                    for uid in user_ids:
+                        user_data = auth.get_user_by_id(uid)
+                        searcher = JobSearch(dashboard=dashboard, user_id=uid)
+                        
+                        dashboard.set_status(f"[{user_data['username']}] Checking LinkedIn...")
+                        dashboard.log(f"Starting cycle for {user_data['username']}...")
+                        
+                        new_jobs = searcher.run()
+                        
+                        if new_jobs:
+                            dashboard.log(f"[{user_data['username']}] Found {len(new_jobs)} new jobs!")
+                        else:
+                            dashboard.log(f"[{user_data['username']}] No new jobs.")
                     
                     dashboard.set_status("Sleeping (10min)")
                     

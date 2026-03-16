@@ -56,6 +56,19 @@ class DBManager:
             conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password_hash TEXT,
+                email TEXT,
+                cv_text TEXT,
+                full_name TEXT,
+                phone TEXT,
+                linkedin_url TEXT,
+                search_config TEXT -- JSON string
+            )
+            ''')
+            cursor.execute('''
             CREATE TABLE IF NOT EXISTS jobs (
                 lien TEXT PRIMARY KEY,
                 titre TEXT,
@@ -64,7 +77,9 @@ class DBManager:
                 statut TEXT DEFAULT 'NULL',
                 score_ia INTEGER DEFAULT 0,
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                critique_ia TEXT -- JSON string in SQLite
+                critique_ia TEXT, -- JSON string in SQLite
+                user_id INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
             ''')
             conn.commit()
@@ -80,6 +95,18 @@ class DBManager:
                 WHEN duplicate_object THEN null;
             END $$;
 
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE,
+                password_hash TEXT,
+                email TEXT,
+                cv_text TEXT,
+                full_name TEXT,
+                phone TEXT,
+                linkedin_url TEXT,
+                search_config JSONB
+            );
+
             CREATE TABLE IF NOT EXISTS jobs (
                 lien TEXT PRIMARY KEY,
                 titre TEXT,
@@ -88,9 +115,11 @@ class DBManager:
                 statut job_status DEFAULT 'NULL',
                 score_ia INTEGER DEFAULT 0,
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                critique_ia JSONB
+                critique_ia JSONB,
+                user_id INTEGER REFERENCES users(id)
             );
             ALTER TABLE jobs ADD COLUMN IF NOT EXISTS critique_ia JSONB;
+            ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id INTEGER;
             ''')
             conn.commit()
             cursor.close()
@@ -106,16 +135,23 @@ class DBManager:
         conn.close()
         return links
 
-    def get_all_jobs(self) -> list:
-        """Retrieves all jobs for the Dashboard."""
+    def get_all_jobs(self, user_id=None) -> list:
+        """Retrieves all jobs for the Dashboard, optionally filtered by user."""
         conn = self._get_conn()
+        query = "SELECT * FROM jobs"
+        params = []
+        if user_id:
+            query += " WHERE user_id = %s" if not self.use_sqlite else " WHERE user_id = ?"
+            params.append(user_id)
+        query += " ORDER BY date DESC"
+
         if self.use_sqlite:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM jobs ORDER BY date DESC")
+            cursor.execute(query, params)
             results = [dict(row) for row in cursor.fetchall()]
         else:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute("SELECT * FROM jobs ORDER BY date DESC")
+            cursor.execute(query, params)
             results = [dict(row) for row in cursor.fetchall()]
             
         # Parse JSON string from SQLite
@@ -129,8 +165,8 @@ class DBManager:
         conn.close()
         return results
 
-    def save_job(self, job_dict):
-        """Saves or updates a job."""
+    def save_job(self, job_dict, user_id=None):
+        """Saves or updates a job, linking it to a user."""
         try:
             conn = self._get_conn()
             cursor = conn.cursor()
@@ -156,20 +192,20 @@ class DBManager:
 
             if self.use_sqlite:
                 cursor.execute('''
-                INSERT INTO jobs (lien, titre, entreprise, lieu, statut, score_ia, date, critique_ia)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO jobs (lien, titre, entreprise, lieu, statut, score_ia, date, critique_ia, user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(lien) DO UPDATE SET
                     titre=excluded.titre, entreprise=excluded.entreprise, lieu=excluded.lieu,
-                    statut=excluded.statut, score_ia=excluded.score_ia, date=excluded.date, critique_ia=excluded.critique_ia
-                ''', (job_dict.get('link', ''), job_dict.get('title', 'Inconnu'), job_dict.get('company', 'Inconnu'), job_dict.get('location', 'Inconnu'), status_val, score, date_val, critique_ia_val))
+                    statut=excluded.statut, score_ia=excluded.score_ia, date=excluded.date, critique_ia=excluded.critique_ia, user_id=excluded.user_id
+                ''', (job_dict.get('link', ''), job_dict.get('title', 'Inconnu'), job_dict.get('company', 'Inconnu'), job_dict.get('location', 'Inconnu'), status_val, score, date_val, critique_ia_val, user_id))
             else:
                 cursor.execute('''
-                INSERT INTO jobs (lien, titre, entreprise, lieu, statut, score_ia, date, critique_ia)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO jobs (lien, titre, entreprise, lieu, statut, score_ia, date, critique_ia, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (lien) DO UPDATE SET
                     titre=EXCLUDED.titre, entreprise=EXCLUDED.entreprise, lieu=EXCLUDED.lieu,
-                    statut=EXCLUDED.statut, score_ia=EXCLUDED.score_ia, date=EXCLUDED.date, critique_ia=EXCLUDED.critique_ia
-                ''', (job_dict.get('link', ''), job_dict.get('title', 'Inconnu'), job_dict.get('company', 'Inconnu'), job_dict.get('location', 'Inconnu'), status_val, score, date_val, critique_ia_val))
+                    statut=EXCLUDED.statut, score_ia=EXCLUDED.score_ia, date=EXCLUDED.date, critique_ia=EXCLUDED.critique_ia, user_id=EXCLUDED.user_id
+                ''', (job_dict.get('link', ''), job_dict.get('title', 'Inconnu'), job_dict.get('company', 'Inconnu'), job_dict.get('location', 'Inconnu'), status_val, score, date_val, critique_ia_val, user_id))
             
             conn.commit()
             cursor.close()
@@ -179,16 +215,22 @@ class DBManager:
             print(f"[DBManager] ERROR saving job: {e}")
             return False
 
-    def get_active_applications(self) -> list:
+    def get_active_applications(self, user_id=None) -> list:
         """Fetches active jobs for email sync."""
         conn = self._get_conn()
+        query = "SELECT * FROM jobs WHERE statut IN ('À postuler', 'Postulé', 'En cours')"
+        params = []
+        if user_id:
+            query += " AND user_id = %s" if not self.use_sqlite else " AND user_id = ?"
+            params.append(user_id)
+            
         if self.use_sqlite:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM jobs WHERE statut IN ('À postuler', 'Postulé', 'En cours')")
+            cursor.execute(query, params)
             results = [dict(row) for row in cursor.fetchall()]
         else:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute("SELECT * FROM jobs WHERE statut IN ('À postuler', 'Postulé', 'En cours')")
+            cursor.execute(query, params)
             results = [dict(row) for row in cursor.fetchall()]
         
         cursor.close()

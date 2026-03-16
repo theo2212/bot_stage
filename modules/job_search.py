@@ -13,8 +13,9 @@ from concurrent.futures import ThreadPoolExecutor
 from .config_loader import load_config
 
 class JobSearch:
-    def __init__(self, config_path="config.yaml", dashboard=None):
+    def __init__(self, config_path="config.yaml", dashboard=None, user_id=None):
         self.config = load_config(config_path)
+        self.user_id = user_id
         
         self.dashboard = dashboard
         self.db_path = self.config.get("paths", {}).get("tracking_db", "data/jobs_db.json")
@@ -33,19 +34,40 @@ class JobSearch:
             with open(self.anti_patterns_file, "r", encoding="utf-8") as f:
                 self.anti_patterns = f.read().strip()
         
-        # Load CV
-        cv_path = self.config.get("paths", {}).get("master_cv", "data/cv.pdf")
-        env_cv_text = self.config.get("user_profile", {}).get("cv_text_env")
-        
-        if env_cv_text:
-            print("[CI Mode] Using CV text from environment variable.")
-            self.cv_text = env_cv_text
-        else:
-            try:
-                self.cv_text = extract_text_from_pdf(cv_path)
-            except:
-                print("Warning: Could not load CV for generation.")
+        if self.user_id:
+            from .auth import AuthManager
+            auth = AuthManager(db_manager=self.db)
+            user_data = auth.get_user_by_id(self.user_id)
+            if user_data:
+                self.cv_text = user_data.get('cv_text', '')
+                # Load search config from user JSON if available
+                search_conf = user_data.get('search_config')
+                if search_conf:
+                    if isinstance(search_conf, str):
+                        try: search_conf = json.loads(search_conf)
+                        except: pass
+                    if isinstance(search_conf, dict):
+                        self.user_keywords = search_conf.get('keywords', self.config.get("search", {}).get("keywords", []))
+                        self.user_locations = search_conf.get('locations', self.config.get("search", {}).get("locations", []))
+                else:
+                    self.user_keywords = self.config.get("search", {}).get("keywords", [])
+                    self.user_locations = self.config.get("search", {}).get("locations", [])
+            else:
                 self.cv_text = ""
+                self.user_keywords = self.config.get("search", {}).get("keywords", [])
+                self.user_locations = self.config.get("search", {}).get("locations", [])
+        else:
+            # Fallback for single-user CLI mode or CI
+            self.user_keywords = self.config.get("search", {}).get("keywords", [])
+            self.user_locations = self.config.get("search", {}).get("locations", [])
+            cv_path = self.config.get("paths", {}).get("master_cv", "data/cv.pdf")
+            env_cv_text = self.config.get("user_profile", {}).get("cv_text_env")
+            
+            if env_cv_text:
+                self.cv_text = env_cv_text
+            else:
+                try: self.cv_text = extract_text_from_pdf(cv_path)
+                except: self.cv_text = ""
 
     # ... (load_db and save_db remain same)
     
@@ -123,7 +145,7 @@ class JobSearch:
                 return False
 
             # Save to Database IMMEDIATELY after validated match to ensure persistence
-            self.db.save_job(job)
+            self.db.save_job(job, user_id=self.user_id)
 
             # B. Generate Application Package (Using data already in critique_dict)
             cover_letter_content = critique_dict.get("cover_letter", "Lettre de motivation non générée.")
@@ -177,7 +199,7 @@ class JobSearch:
         
         # Load DB manually from PostgreSQL
         try:
-            db_jobs = self.db.get_all_jobs()
+            db_jobs = self.db.get_all_jobs(user_id=self.user_id)
             jobs = []
             for j in db_jobs:
                 # Map PostgreSQL french columns back to English expected by process_job()
@@ -253,7 +275,7 @@ class JobSearch:
             return
 
         print("Fetching active applications from local Database...")
-        active_jobs = self.db.get_active_applications()
+        active_jobs = self.db.get_active_applications(user_id=self.user_id)
         if not active_jobs:
             print("No active applications found awaiting response.")
             if self.dashboard: self.dashboard.log("No active applications to sync.")
@@ -378,9 +400,10 @@ class JobSearch:
                         "source": "Gmail Scraper",
                         "statut": db_status,
                         "date": datetime.datetime.now().strftime("%Y-%m-%d"),
-                        "score_ia": 0
+                        "score_ia": 0,
+                        "user_id": self.user_id
                     }
-                    self.db.save_job(new_job)
+                    self.db.save_job(new_job, user_id=self.user_id)
                     discovered_count += 1
                     
                     # Push critical statuses to Notion so User sees them on the board
@@ -514,8 +537,8 @@ class JobSearch:
 
     def run(self):
         scraper = UniversalScraper(self.config, dashboard=self.dashboard)
-        keywords = self.config["search"]["keywords"]
-        locations = self.config["search"]["locations"]
+        keywords = self.user_keywords
+        locations = self.user_locations
         
         if self.dashboard:
             self.dashboard.log(f"Starting Multi-Platform Global Search...")
@@ -581,7 +604,7 @@ class JobSearch:
                                 self.new_jobs.append(job)
                                 if success:
                                     job['status'] = "À postuler"
-                                    self.db.save_job(job)
+                                    self.db.save_job(job, user_id=self.user_id)
                                     total_found += 1
                                     
                                 if total_found >= target_limit:

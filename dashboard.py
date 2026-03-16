@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.db_manager import DBManager
 from modules.config_loader import load_config
+from modules.auth import AuthManager
 import time
 
 # --- PAGE CONFIGURATION ---
@@ -106,6 +107,18 @@ st.markdown("""
         overflow: hidden;
         border: 1px solid rgba(255,255,255,0.05);
     }
+
+    /* Auth Styling */
+    .auth-container {
+        max-width: 450px;
+        margin: 100px auto;
+        padding: 40px;
+        background: rgba(16, 24, 39, 0.7);
+        border: 1px solid rgba(0, 255, 204, 0.2);
+        border-radius: 24px;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -120,13 +133,13 @@ STATUS_FILE = os.path.join(BASE_DIR, "data", "scraper_status.json")
 LIVE_STATE_FILE = os.path.join(BASE_DIR, "data", "live_state.json")
 
 # Remove caching so data represents the live PostgreSQL DB state.
-def load_data():
+def load_data(user_id=None):
     config = load_config(CONFIG_PATH)
             
     try:
-        db = DBManager()
+        db = DBManager(init_db=True)
         if db.connected:
-            jobs = db.get_all_jobs()
+            jobs = db.get_all_jobs(user_id=user_id)
             if db.use_sqlite:
                 st.sidebar.info("🏠 **Base Locale Active** (SQLite)")
                 st.sidebar.caption("Le réseau de l'école bloque Supabase (Port 5432/6543). Vos données sont stockées en local sur ce PC.")
@@ -150,7 +163,56 @@ def load_data():
         
     return config, jobs
 
-config, jobs = load_data()
+# --- AUTHENTICATION LOGIC ---
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'user' not in st.session_state:
+    st.session_state.user = None
+
+auth = AuthManager(db_manager=DBManager(init_db=True))
+
+def show_login():
+    st.markdown('<div class="auth-container">', unsafe_allow_html=True)
+    st.title("🔐 Access Portal")
+    
+    tab_login, tab_reg = st.tabs(["Login", "Register"])
+    
+    with tab_login:
+        with st.form("login_form"):
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.form_submit_button("UNAUTHORIZED ACCESS", type="primary", use_container_width=True):
+                user = auth.login_user(u, p)
+                if user:
+                    st.session_state.authenticated = True
+                    st.session_state.user = user
+                    st.success(f"Welcome back, Agent {u}!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Invalid Credentials. Access Denied.")
+                    
+    with tab_reg:
+        with st.form("reg_form"):
+            ru = st.text_input("New Username")
+            re = st.text_input("Email")
+            rp = st.text_input("New Password", type="password")
+            rf = st.text_input("Full Name")
+            if st.form_submit_button("INITIALIZE ACCOUNT", type="primary", use_container_width=True):
+                if auth.register_user(ru, rp, re, full_name=rf):
+                    st.success("Account created successfully. You can now login.")
+                else:
+                    st.error("Username already taken or error occurred.")
+                    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+if not st.session_state.authenticated:
+    show_login()
+    st.stop()
+
+# Load User Data
+user_data = st.session_state.user
+config, jobs = load_data(user_id=user_data['id'])
 
 # --- SIDEBAR CONTROL ROOM ---
 with st.sidebar:
@@ -167,8 +229,15 @@ with st.sidebar:
         "🎯 Live Hunter",
         "🗃️ Database",
         "✉️ Auto-Mailing",
-        "⚙️ Configuration"
+        "⚙️ Configuration",
+        "👤 My Profile"
     ], label_visibility="collapsed")
+    
+    st.markdown("---")
+    if st.button("🔌 DISCONNECT", type="secondary", use_container_width=True):
+        st.session_state.authenticated = False
+        st.session_state.user = None
+        st.rerun()
     
     st.markdown("---")
     st.subheader("⚡ EXECUTION ENGINE")
@@ -658,3 +727,48 @@ elif page == "⚙️ Configuration":
             st.success("✅ Configuration sauvegardée avec succès !")
         except Exception as e:
             st.error(f"Erreur lors de la sauvegarde: {e}")
+
+elif page == "👤 My Profile":
+    st.markdown("### 👤 User Profile & Identity")
+    st.markdown("Configure your specific identity, CV and search preferences. This data is used exclusively for your analyses.")
+    
+    with st.form("profile_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            new_name = st.text_input("Full Name", value=user_data.get('full_name', ''))
+            new_email = st.text_input("Contact Email", value=user_data.get('email', ''))
+        with col2:
+            new_phone = st.text_input("Phone Number", value=user_data.get('phone', ''))
+            new_linkedin = st.text_input("LinkedIn URL", value=user_data.get('linkedin_url', ''))
+            
+        st.markdown("---")
+        st.markdown("#### 📄 Master CV (Text)")
+        st.caption("Paste your CV content here. This is what the AI will use to match missions and generate cover letters.")
+        new_cv = st.text_area("CV Content", value=user_data.get('cv_text', ''), height=400)
+        
+        if st.form_submit_button("💾 UPDATE IDENTITY", type="primary", use_container_width=True):
+            conn = DBManager()._get_conn()
+            cursor = conn.cursor()
+            try:
+                if DBManager().use_sqlite:
+                    cursor.execute('''
+                    UPDATE users 
+                    SET full_name = ?, email = ?, phone = ?, linkedin_url = ?, cv_text = ?
+                    WHERE id = ?
+                    ''', (new_name, new_email, new_phone, new_linkedin, new_cv, user_data['id']))
+                else:
+                    cursor.execute('''
+                    UPDATE users 
+                    SET full_name = %s, email = %s, phone = %s, linkedin_url = %s, cv_text = %s
+                    WHERE id = %s
+                    ''', (new_name, new_email, new_phone, new_linkedin, new_cv, user_data['id']))
+                conn.commit()
+                st.session_state.user = auth.get_user_by_id(user_data['id'])
+                st.success("Identity updated successfully!")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error updating profile: {e}")
+            finally:
+                cursor.close()
+                conn.close()
