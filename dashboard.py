@@ -789,31 +789,55 @@ elif page == "👤 My Profile":
         with col2:
             new_phone = st.text_input("Phone Number", value=user_data.get('phone', ''))
             new_linkedin = st.text_input("LinkedIn URL", value=user_data.get('linkedin_url', ''))
+
+        st.markdown("---")
+        st.markdown("#### 🎯 Personal Search Configuration")
+        st.caption("These settings override the global config.yaml for your specific account.")
+        
+        # Load existing search_config
+        s_conf = user_data.get('search_config') or {}
+        if isinstance(s_conf, str):
+            try: s_conf = json.loads(s_conf)
+            except: s_conf = {}
+            
+        current_kws = ", ".join(s_conf.get('keywords', []))
+        current_locs = ", ".join(s_conf.get('locations', []))
+        
+        c_k1, c_k2 = st.columns(2)
+        with c_k1:
+            new_kws_str = st.text_input("My Target Keywords (comma-separated)", value=current_kws)
+        with c_k2:
+            new_locs_str = st.text_input("My Locations (comma-separated)", value=current_locs)
             
         st.markdown("---")
         st.markdown("#### 📄 Master CV (Text)")
         st.caption("Paste your CV content here. This is what the AI will use to match missions and generate cover letters.")
         new_cv = st.text_area("CV Content", value=user_data.get('cv_text', ''), height=400)
         
-        if st.form_submit_button("💾 UPDATE IDENTITY", type="primary", use_container_width=True):
+        if st.form_submit_button("💾 UPDATE IDENTITY & SEARCH CONFIG", type="primary", use_container_width=True):
+            # Parse strings back to lists
+            new_kws = [k.strip() for k in new_kws_str.split(",") if k.strip()]
+            new_locs = [l.strip() for l in new_locs_str.split(",") if l.strip()]
+            new_search_config = json.dumps({"keywords": new_kws, "locations": new_locs})
+
             conn = DBManager()._get_conn()
             cursor = conn.cursor()
             try:
                 if DBManager().use_sqlite:
                     cursor.execute('''
                     UPDATE users 
-                    SET full_name = ?, email = ?, phone = ?, linkedin_url = ?, cv_text = ?
+                    SET full_name = ?, email = ?, phone = ?, linkedin_url = ?, cv_text = ?, search_config = ?
                     WHERE id = ?
-                    ''', (new_name, new_email, new_phone, new_linkedin, new_cv, user_data['id']))
+                    ''', (new_name, new_email, new_phone, new_linkedin, new_cv, new_search_config, user_data['id']))
                 else:
                     cursor.execute('''
                     UPDATE users 
-                    SET full_name = %s, email = %s, phone = %s, linkedin_url = %s, cv_text = %s
+                    SET full_name = %s, email = %s, phone = %s, linkedin_url = %s, cv_text = %s, search_config = %s
                     WHERE id = %s
-                    ''', (new_name, new_email, new_phone, new_linkedin, new_cv, user_data['id']))
+                    ''', (new_name, new_email, new_phone, new_linkedin, new_cv, new_search_config, user_data['id']))
                 conn.commit()
                 st.session_state.user = auth.get_user_by_id(user_data['id'])
-                st.success("Identity updated successfully!")
+                st.success("Identity & Search Config updated successfully!")
                 time.sleep(1)
                 st.rerun()
             except Exception as e:
