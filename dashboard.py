@@ -24,25 +24,23 @@ st.markdown("""
 <style>
     /* Global Background and Fonts */
     .stApp {
-        background-color: #0A0F1C;
+        background: radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%);
         font-family: 'Inter', sans-serif;
     }
     
     /* Metrics Styling */
     div[data-testid="stMetric"] {
-        background-color: rgba(16, 24, 39, 0.6);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        padding: 20px;
-        border-radius: 16px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+        background: rgba(16, 24, 39, 0.4);
+        border: 1px solid rgba(0, 255, 204, 0.1);
+        padding: 24px;
+        border-radius: 20px;
+        backdrop-filter: blur(12px);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     }
     div[data-testid="stMetric"]:hover {
-        transform: translateY(-5px);
-        border-color: rgba(0, 255, 204, 0.4);
-        box-shadow: 0 10px 40px rgba(0, 255, 204, 0.15);
+        transform: translateY(-8px);
+        border-color: rgba(0, 255, 204, 0.6);
+        box-shadow: 0 10px 40px rgba(0, 255, 204, 0.2);
     }
     div[data-testid="stMetricValue"] {
         color: #00FFCC !important;
@@ -57,16 +55,14 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 1.5px;
     }
-
+    
     /* Headers */
     h1 {
-        background: linear-gradient(135deg, #00FFCC 0%, #3B82F6 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        background: linear-gradient(90deg, #00FFCC 0%, #3B82F6 100%);
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
         font-weight: 900 !important;
-        font-size: 3.2rem !important;
-        margin-bottom: 1.5rem !important;
-        letter-spacing: -1px;
+        letter-spacing: -2px !important;
     }
     h3 {
         color: #F8FAFC !important;
@@ -113,23 +109,52 @@ st.markdown("""
         display: none !important;
     }
     
+    [data-testid="stHeader"] {
+        background: transparent !important;
+    }
+    
     .auth-wrapper {
         display: flex;
         justify-content: center;
         align-items: center;
-        height: 80vh;
+        margin-top: 5vh;
         width: 100%;
     }
     
     .auth-container {
         width: 100%;
         max-width: 500px;
-        padding: 40px;
-        background: rgba(16, 24, 39, 0.7);
-        border: 1px solid rgba(0, 255, 204, 0.2);
-        border-radius: 24px;
-        backdrop-filter: blur(20px);
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        padding: 45px;
+        background: rgba(16, 24, 39, 0.85) !important;
+        border: 1px solid rgba(0, 255, 204, 0.4) !important;
+        border-radius: 32px !important;
+        backdrop-filter: blur(30px) !important;
+        box-shadow: 0 0 60px rgba(0, 255, 204, 0.1), 0 30px 70px rgba(0, 0, 0, 0.7) !important;
+    }
+
+    .auth-header h1 {
+        font-size: 3rem !important;
+        line-height: 1 !important;
+        margin-bottom: 1rem !important;
+        text-shadow: 0 0 20px rgba(0, 255, 204, 0.4);
+    }
+    
+    .glow-text {
+        background: linear-gradient(90deg, #00FFCC, #A855F7) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+    }
+    
+    /* Form fields polish */
+    .stTextInput input {
+        background: rgba(31, 41, 55, 0.5) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 12px !important;
+        color: white !important;
+    }
+    .stTextInput input:focus {
+        border-color: #00FFCC !important;
+        box-shadow: 0 0 10px rgba(0, 255, 204, 0.2) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -189,7 +214,8 @@ def show_login():
     
     with col:
         st.markdown('<div class="auth-wrapper">', unsafe_allow_html=True)
-        with st.container(border=True):
+        st.markdown('<div class="auth-container">', unsafe_allow_html=True)
+        with st.container():
             st.markdown('<div class="auth-header">', unsafe_allow_html=True)
             st.markdown('<h1>STAGE HUNTER <span class="glow-text">3000</span></h1>', unsafe_allow_html=True)
             st.markdown('<p style="color: #94A3B8; margin-bottom: 2rem;">ULTIMATE ACCESS TERMINAL</p>', unsafe_allow_html=True)
@@ -225,6 +251,7 @@ def show_login():
             
             st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if not st.session_state.authenticated:
     show_login()
