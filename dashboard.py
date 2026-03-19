@@ -54,14 +54,12 @@ st.markdown("""
     }
     
     /* Headers */
-    h1 {
-        background: linear-gradient(90deg, #60A5FA 0%, #3B82F6 100%);
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
+    .stApp h1 {
+        color: #F8FAFC !important;
         font-weight: 800 !important;
         letter-spacing: -1px !important;
     }
-    h3 {
+    .stApp h3 {
         color: #F8FAFC !important;
         font-weight: 600 !important;
         border-bottom: 1px solid rgba(255,255,255,0.1);
@@ -111,8 +109,7 @@ st.markdown("""
     .auth-wrapper {
         display: flex;
         justify-content: center;
-        align-items: center;
-        height: 70vh;
+        margin-top: 15vh;
         width: 100%;
     }
     
@@ -131,6 +128,9 @@ st.markdown("""
         line-height: 1.2 !important;
         margin-bottom: 0.5rem !important;
         text-align: center;
+        background: linear-gradient(90deg, #60A5FA 0%, #3B82F6 100%);
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
     }
     
     .auth-header p {
@@ -161,18 +161,6 @@ st.markdown("""
     
     .glow-text {
         color: #60A5FA !important;
-    }
-    
-    /* Form fields polish */
-    .stTextInput input {
-        background: #0F172A !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 8px !important;
-        color: white !important;
-    }
-    .stTextInput input:focus {
-        border-color: #3B82F6 !important;
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
     }
 </style>
 """, unsafe_allow_html=True)
