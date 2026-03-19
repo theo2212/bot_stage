@@ -137,6 +137,28 @@ st.markdown("""
         text-align: center;
     }
     
+    /* Hide Radio Button Circles in Sidebar */
+    .stRadio > div[role="radiogroup"] > label > div:first-child {
+        display: none !important;
+    }
+    .stRadio > div[role="radiogroup"] > label {
+        padding: 10px 15px;
+        background: rgba(255,255,255,0.02);
+        border-radius: 8px;
+        margin-bottom: 5px;
+        transition: all 0.2s ease;
+        border: 1px solid transparent;
+        cursor: pointer;
+    }
+    .stRadio > div[role="radiogroup"] > label:hover {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    .stRadio > div[role="radiogroup"] > label[data-checked="true"] {
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid #3B82F6;
+    }
+    
     .glow-text {
         color: #60A5FA !important;
     }
@@ -436,17 +458,22 @@ if page == "🏠 Vue d'ensemble":
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Draw Funnel (Modern colors)
-        fig_funnel = go.Figure(go.Funnel(
-            y=["Offres Analysées", "Pertinentes (>80%)", "Candidatures", "Entretiens"],
-            x=[total_analyzed, validated_ai, applications_sent, interviews],
-            marker={"color": ["#1E293B", "#3B82F6", "#60A5FA", "#10B981"]}
+        # Draw Funnel (Modern colors) -> Replaced with Horizontal Bar as requested
+        fig_funnel = go.Figure(go.Bar(
+            y=["Entretiens", "Candidatures", "Pertinentes (>80%)", "Offres Analysées"],
+            x=[interviews, applications_sent, validated_ai, total_analyzed],
+            orientation='h',
+            text=[interviews, applications_sent, validated_ai, total_analyzed],
+            textposition='auto',
+            marker=dict(color=["#10B981", "#60A5FA", "#3B82F6", "#1E293B"])
         ))
         fig_funnel.update_layout(
             template="plotly_dark", 
             paper_bgcolor='rgba(0,0,0,0)', 
             plot_bgcolor='rgba(0,0,0,0)',
-            title="Pipeline de Candidatures"
+            title="Pipeline de Candidatures",
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False)
         )
         
         # Draw Donut Chart instead of pure pie
@@ -798,22 +825,22 @@ elif page == "⚙️ Réglages":
         except Exception as e:
             st.error(f"Erreur lors de la sauvegarde: {e}")
 
-elif page == "👤 My Profile":
-    st.markdown("### 👤 User Profile & Identity")
-    st.markdown("Configure your specific identity, CV and search preferences. This data is used exclusively for your analyses.")
+elif page == "👤 Mon Profil":
+    st.markdown("### 👤 Identité & Profil Utilisateur")
+    st.markdown("Configurez vos préférences personnelles, votre CV et vos critères de recherche.")
     
     with st.form("profile_form"):
         col1, col2 = st.columns(2)
         with col1:
-            new_name = st.text_input("Full Name", value=user_data.get('full_name', ''))
-            new_email = st.text_input("Contact Email", value=user_data.get('email', ''))
+            new_name = st.text_input("Nom Complet", value=user_data.get('full_name', ''))
+            new_email = st.text_input("Email de contact", value=user_data.get('email', ''))
         with col2:
-            new_phone = st.text_input("Phone Number", value=user_data.get('phone', ''))
-            new_linkedin = st.text_input("LinkedIn URL", value=user_data.get('linkedin_url', ''))
+            new_phone = st.text_input("Téléphone", value=user_data.get('phone', ''))
+            new_linkedin = st.text_input("URL LinkedIn", value=user_data.get('linkedin_url', ''))
 
         st.markdown("---")
-        st.markdown("#### 🎯 Personal Search Configuration")
-        st.caption("These settings override the global config.yaml for your specific account.")
+        st.markdown("#### 🎯 Configuration de Recherche Personnelle")
+        st.caption("Ces règles surchargent la configuration globale pour limiter la recherche à VOS besoins.")
         
         # Load existing search_config
         s_conf = user_data.get('search_config') or {}
@@ -826,16 +853,16 @@ elif page == "👤 My Profile":
         
         c_k1, c_k2 = st.columns(2)
         with c_k1:
-            new_kws_str = st.text_input("My Target Keywords (comma-separated)", value=current_kws)
+            new_kws_str = st.text_input("Mes Mots-clés (séparés par des virgules)", value=current_kws)
         with c_k2:
-            new_locs_str = st.text_input("My Locations (comma-separated)", value=current_locs)
+            new_locs_str = st.text_input("Mes Lieux (séparés par des virgules)", value=current_locs)
             
         st.markdown("---")
-        st.markdown("#### 📄 Master CV (Text)")
-        st.caption("Paste your CV content here. This is what the AI will use to match missions and generate cover letters.")
-        new_cv = st.text_area("CV Content", value=user_data.get('cv_text', ''), height=400)
+        st.markdown("#### 📄 Master CV (Texte)")
+        st.caption("Collez ici le contenu texte brut de votre CV. C'est la base pour toutes les analyses de l'I.A. et les lettres de motivation.")
+        new_cv = st.text_area("Contenu du CV", value=user_data.get('cv_text', ''), height=400)
         
-        if st.form_submit_button("💾 UPDATE IDENTITY & SEARCH CONFIG", type="primary", use_container_width=True):
+        if st.form_submit_button("💾 METTRE À JOUR LE PROFIL", type="primary", use_container_width=True):
             # Parse strings back to lists
             new_kws = [k.strip() for k in new_kws_str.split(",") if k.strip()]
             new_locs = [l.strip() for l in new_locs_str.split(",") if l.strip()]
