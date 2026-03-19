@@ -17,83 +17,78 @@ from modules.auth import AuthManager
 import time
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Stage Hunter 3000 PRO", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="L'Éclaireur", page_icon="🧭", layout="wide", initial_sidebar_state="expanded")
 
 # Custom CSS for Premium Glassmorphism & Cyberpunk Aesthetics
 st.markdown("""
 <style>
     /* Global Background and Fonts */
     .stApp {
-        background: radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%);
+        background: #0B1121;
         font-family: 'Inter', sans-serif;
     }
     
     /* Metrics Styling */
     div[data-testid="stMetric"] {
-        background: rgba(16, 24, 39, 0.4);
-        border: 1px solid rgba(0, 255, 204, 0.1);
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         padding: 24px;
-        border-radius: 20px;
+        border-radius: 16px;
         backdrop-filter: blur(12px);
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.3s ease;
     }
     div[data-testid="stMetric"]:hover {
-        transform: translateY(-8px);
-        border-color: rgba(0, 255, 204, 0.6);
-        box-shadow: 0 10px 40px rgba(0, 255, 204, 0.2);
+        transform: translateY(-4px);
+        border-color: rgba(59, 130, 246, 0.5);
+        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.1);
     }
     div[data-testid="stMetricValue"] {
-        color: #00FFCC !important;
-        font-size: 2.8rem !important;
-        font-weight: 800 !important;
-        text-shadow: 0px 0px 10px rgba(0, 255, 204, 0.3);
+        color: #60A5FA !important;
+        font-size: 2.5rem !important;
+        font-weight: 700 !important;
     }
     div[data-testid="stMetricLabel"] {
         color: #94A3B8 !important;
-        font-size: 1.05rem !important;
-        font-weight: 600 !important;
-        text-transform: uppercase;
-        letter-spacing: 1.5px;
+        font-size: 1rem !important;
+        font-weight: 500 !important;
     }
     
     /* Headers */
     h1 {
-        background: linear-gradient(90deg, #00FFCC 0%, #3B82F6 100%);
+        background: linear-gradient(90deg, #60A5FA 0%, #3B82F6 100%);
         -webkit-background-clip: text !important;
         -webkit-text-fill-color: transparent !important;
-        font-weight: 900 !important;
-        letter-spacing: -2px !important;
+        font-weight: 800 !important;
+        letter-spacing: -1px !important;
     }
     h3 {
         color: #F8FAFC !important;
-        font-weight: 700 !important;
-        border-bottom: 2px solid rgba(255,255,255,0.05);
-        padding-bottom: 10px;
+        font-weight: 600 !important;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        padding-bottom: 8px;
     }
     
     /* Buttons */
     .stButton>button {
-        border-radius: 12px !important;
-        font-weight: 700 !important;
-        height: 3.2rem;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        height: 3rem;
+        transition: all 0.2s ease;
+        border: 1px solid rgba(255,255,255,0.1) !important;
     }
     .stButton>button[kind="primary"] {
-        background: linear-gradient(90deg, #3B82F6, #8B5CF6);
+        background: #2563EB;
         color: white !important;
-        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+        border: none !important;
     }
     .stButton>button[kind="primary"]:hover {
-        box-shadow: 0 6px 25px rgba(139, 92, 246, 0.5) !important;
-        transform: translateY(-2px);
+        background: #1D4ED8;
+        transform: translateY(-1px);
     }
     
     /* Sidebar */
     section[data-testid="stSidebar"] {
-        background-color: #0E1526;
+        background-color: #0F172A;
         border-right: 1px solid rgba(255,255,255,0.05);
     }
     
@@ -123,38 +118,39 @@ st.markdown("""
     
     .auth-container {
         width: 100%;
-        max-width: 500px;
-        padding: 45px;
-        background: rgba(16, 24, 39, 0.85) !important;
-        border: 1px solid rgba(0, 255, 204, 0.4) !important;
-        border-radius: 32px !important;
-        backdrop-filter: blur(30px) !important;
-        box-shadow: 0 0 60px rgba(0, 255, 204, 0.1), 0 30px 70px rgba(0, 0, 0, 0.7) !important;
+        max-width: 480px;
+        padding: 40px;
+        background: #1E293B !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 24px !important;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4) !important;
     }
 
     .auth-header h1 {
-        font-size: 3rem !important;
-        line-height: 1 !important;
-        margin-bottom: 1rem !important;
-        text-shadow: 0 0 20px rgba(0, 255, 204, 0.4);
+        font-size: 2.5rem !important;
+        line-height: 1.2 !important;
+        margin-bottom: 0.5rem !important;
+        text-align: center;
+    }
+    
+    .auth-header p {
+        text-align: center;
     }
     
     .glow-text {
-        background: linear-gradient(90deg, #00FFCC, #A855F7) !important;
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
+        color: #60A5FA !important;
     }
     
     /* Form fields polish */
     .stTextInput input {
-        background: rgba(31, 41, 55, 0.5) !important;
+        background: #0F172A !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 12px !important;
+        border-radius: 8px !important;
         color: white !important;
     }
     .stTextInput input:focus {
-        border-color: #00FFCC !important;
-        box-shadow: 0 0 10px rgba(0, 255, 204, 0.2) !important;
+        border-color: #3B82F6 !important;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -217,37 +213,37 @@ def show_login():
         st.markdown('<div class="auth-container">', unsafe_allow_html=True)
         with st.container():
             st.markdown('<div class="auth-header">', unsafe_allow_html=True)
-            st.markdown('<h1>STAGE HUNTER <span class="glow-text">3000</span></h1>', unsafe_allow_html=True)
-            st.markdown('<p style="color: #94A3B8; margin-bottom: 2rem;">ULTIMATE ACCESS TERMINAL</p>', unsafe_allow_html=True)
+            st.markdown('<h1>L\'Éclaireur</h1>', unsafe_allow_html=True)
+            st.markdown('<p style="color: #94A3B8; margin-bottom: 2rem;">Plateforme de Recherche Intelligente</p>', unsafe_allow_html=True)
             
-            tab_login, tab_reg = st.tabs(["[ LOGIN ]", "[ REGISTER ]"])
+            tab_login, tab_reg = st.tabs(["Connexion", "Inscription"])
             
             with tab_login:
                 with st.form("login_form", clear_on_submit=False):
-                    u = st.text_input("CREDENTIAL_ID", placeholder="Username...")
-                    p = st.text_input("ACCESS_KEY", type="password", placeholder="••••••••")
-                    if st.form_submit_button("INITIALIZE SECURE LINK", type="primary", use_container_width=True):
+                    u = st.text_input("Identifiant", placeholder="Nom d'utilisateur...")
+                    p = st.text_input("Mot de passe", type="password", placeholder="••••••••")
+                    if st.form_submit_button("Se Connecter", type="primary", use_container_width=True):
                         user = auth.login_user(u, p)
                         if user:
                             st.session_state.authenticated = True
                             st.session_state.user = user
-                            st.toast(f"Access Granted: Agent {u}", icon="🔓")
+                            st.toast(f"Bienvenue, {u} !", icon="👋")
                             time.sleep(1)
                             st.rerun()
                         else:
-                            st.error("INVALID CREDENTIALS. RETRY.")
+                            st.error("Identifiants incorrects.")
                             
             with tab_reg:
                 with st.form("reg_form"):
-                    ru = st.text_input("NEW_AGENT_ID", placeholder="Choose username")
-                    re = st.text_input("COM_LINK", placeholder="Email address")
-                    rp = st.text_input("ENCRYPT_KEY", type="password", placeholder="Strong password")
-                    rf = st.text_input("FULL_NAME", placeholder="Full name")
-                    if st.form_submit_button("GENERATE PROFILE", type="primary", use_container_width=True):
+                    ru = st.text_input("Nom d'utilisateur", placeholder="Choisissez un identifiant")
+                    re = st.text_input("Email", placeholder="Adresse email")
+                    rp = st.text_input("Mot de passe", type="password", placeholder="Mot de passe sécurisé")
+                    rf = st.text_input("Nom complet", placeholder="Prénom Nom")
+                    if st.form_submit_button("Créer un compte", type="primary", use_container_width=True):
                         if auth.register_user(ru, rp, re, full_name=rf):
-                            st.success("AGENT REGISTERED. COMMENCING LOGIN.")
+                            st.success("Compte créé avec succès ! Connectez-vous.")
                         else:
-                            st.error("COLLISION DETECTED. ID TAKEN.")
+                            st.error("Cet identifiant est déjà pris.")
             
             st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
@@ -261,35 +257,35 @@ if not st.session_state.authenticated:
 user_data = st.session_state.user
 config, jobs = load_data(user_id=user_data['id'])
 
-st.title("📈 Stage Hunter 3000 - Ultimate Terminal")
+st.title("🧭 L'Éclaireur - Tableau de Bord")
 
 # --- SIDEBAR CONTROL ROOM ---
 with st.sidebar:
     avatar_url = config.get("discord", {}).get("avatar_url", "")
     if avatar_url:
         st.image(avatar_url, width=100)
-    st.markdown(f"**Agent:** {config.get('user_profile', {}).get('name', 'Operator')}")
+    st.markdown(f"**Agent:** {config.get('user_profile', {}).get('name', 'Opérateur')}")
     st.markdown("---")
     
     # NAVIGATION SYSTEM
-    st.subheader("🧭 NAVIGATION")
-    page = st.radio("Go to Explorer", [
-        "🏠 Control Center",
-        "🎯 Live Hunter",
-        "🗃️ Database",
-        "✉️ Auto-Mailing",
-        "⚙️ Configuration",
-        "👤 My Profile"
+    st.subheader("COMPASS")
+    page = st.radio("Navigation", [
+        "🏠 Vue d'ensemble",
+        "🎯 Chasse en Direct",
+        "🗃️ Base de données",
+        "✉️ Suivi Emails",
+        "⚙️ Réglages",
+        "👤 Mon Profil"
     ], label_visibility="collapsed")
     
     st.markdown("---")
-    if st.button("🔌 DISCONNECT", type="secondary", use_container_width=True):
+    if st.button("🔌 DÉCONNEXION", type="secondary", use_container_width=True):
         st.session_state.authenticated = False
         st.session_state.user = None
         st.rerun()
     
     st.markdown("---")
-    st.subheader("⚡ EXECUTION ENGINE")
+    st.subheader("⚡ MOTEUR DE RECHERCHE")
     
     def get_scraper_status():
         try:
@@ -340,10 +336,9 @@ with st.sidebar:
     col_a, col_b = st.columns(2)
     with col_a:
         if current_status == "running":
-            # Active button shows as a distinct state but remains clickable to allow "Re-launch/Force"
-            st.button("🟢 RUNNING", disabled=False, key="running_btn", width='stretch')
+            st.button("🟢 EN COURS", disabled=False, key="running_btn", width='stretch')
         else:
-            if st.button("▶️ START", type="primary", width='stretch'):
+            if st.button("▶️ DÉMARRER", type="primary", width='stretch'):
                 set_scraper_status("running")
                 if engine_is_dead:
                     try:
@@ -354,17 +349,16 @@ with st.sidebar:
                             cwd=BASE_DIR,
                             creationflags=flags
                         )
-                        st.toast("Bot lancé !", icon="🚀")
+                        st.toast("Recherche lancée !", icon="🚀")
                     except Exception as e:
                         st.error(f"Erreur: {e}")
                 st.rerun()
 
     with col_b:
         if current_status == "stopped":
-            # Active button shows as a distinct state
-            st.button("🔴 STOPPED", disabled=False, key="stopped_btn", width='stretch')
+            st.button("🔴 ARRÊTÉ", disabled=False, key="stopped_btn", width='stretch')
         else:
-            if st.button("⏹️ STOP", type="primary", width='stretch'):
+            if st.button("⏹️ ARRÊTER", type="primary", width='stretch'):
                 try:
                     # Get PID from the standardized STATUS_FILE
                     if os.path.exists(STATUS_FILE):
@@ -418,8 +412,8 @@ if jobs:
     df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
 
 # --- ROUTER SYSTEM ---
-if page == "🏠 Control Center":
-    st.markdown("### 📈 Entonnoir de Conversion (B2B)")
+if page == "🏠 Vue d'ensemble":
+    st.markdown("### 📈 Entonnoir d'Acquisition")
     if not df.empty:
         total_analyzed = len(df)
         
@@ -435,35 +429,51 @@ if page == "🏠 Control Center":
         conversion_rate = (interviews / applications_sent * 100) if applications_sent > 0 else 0
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Offres Analysées (IA)", total_analyzed)
+        c1.metric("Offres Analysées", total_analyzed)
         c2.metric("Validées par l'IA", validated_ai)
         c3.metric("Candidatures Envoyées", applications_sent)
-        c4.metric("Entretiens Décrochés", interviews, f"{conversion_rate:.1f}% Conv." if applications_sent else "0%")
+        c4.metric("Entretiens", interviews, f"{conversion_rate:.1f}% Conv." if applications_sent else "0%")
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Draw Funnel
+        # Draw Funnel (Modern colors)
         fig_funnel = go.Figure(go.Funnel(
-            y=["Offres Scrutées", "Validées IA (>80%)", "Candidatures Envoyées", "Entretiens"],
+            y=["Offres Analysées", "Pertinentes (>80%)", "Candidatures", "Entretiens"],
             x=[total_analyzed, validated_ai, applications_sent, interviews],
-            marker={"color": ["#1E3A8A", "#2563EB", "#00FFCC", "#10B981"]}
+            marker={"color": ["#1E293B", "#3B82F6", "#60A5FA", "#10B981"]}
         ))
-        fig_funnel.update_layout(template="plotly_dark", title="Acquisition Funnel")
+        fig_funnel.update_layout(
+            template="plotly_dark", 
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)',
+            title="Pipeline de Candidatures"
+        )
         
-        # Exclude completely NULL scraped data from the pie chart of Active Statuses
+        # Draw Donut Chart instead of pure pie
         active_status_df = df[df["Statut"] != "NULL"]
         status_counts = active_status_df["Statut"].value_counts()
-        fig_pie = px.pie(values=status_counts.values, names=status_counts.index, color_discrete_sequence=px.colors.qualitative.Pastel, template="plotly_dark", hole=0.4, title="Distribution des Candidatures Actives")
+        fig_pie = px.pie(
+            values=status_counts.values, 
+            names=status_counts.index, 
+            color_discrete_sequence=px.colors.qualitative.Prism, 
+            template="plotly_dark", 
+            hole=0.6, 
+            title="Répartition des Statuts"
+        )
+        fig_pie.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
         
         r1, r2 = st.columns(2)
-        r1.plotly_chart(fig_funnel, width="stretch")
-        r2.plotly_chart(fig_pie, width="stretch")
+        r1.plotly_chart(fig_funnel, use_container_width=True)
+        r2.plotly_chart(fig_pie, use_container_width=True)
     else:
-        st.info("Aucune donnée dans la base locale pour le moment.")
+        st.info("Aucune donnée dans la base pour le moment.")
 
-elif page == "🎯 Live Hunter":
-    st.markdown("### 🎯 Live Hunter Dashboard")
-    st.markdown("Vois en temps réel sur quoi l'I.A. est en train de réfléchir.")
+elif page == "🎯 Chasse en Direct":
+    st.markdown("### 🎯 Chasse en Direct")
+    st.markdown("Suivez la réflexion de l'I.A. en temps réel.")
     
     if current_status == "running":
         import time
@@ -475,15 +485,20 @@ elif page == "🎯 Live Hunter":
             
             c1, c2 = st.columns([1, 2])
             with c1:
-                st.markdown("#### ⚙️ Logs Moteur")
+                st.markdown("#### 🔄 Statut de l'Agent")
                 logs = state.get('logs', [])
-                st.code("\n".join(logs), language="bash")
+                if logs:
+                    # Clean display, no markdown code blocks
+                    latest_log = logs[-1] if len(logs) > 0 else "Analyse en attente..."
+                    st.info(f"**Action en cours :** {latest_log}")
+                else:
+                    st.info("Recherche imminente...")
                 
             with c2:
-                st.markdown("#### 🔍 Dernières offres vues")
+                st.markdown("#### 🔍 Dernières découvertes")
                 live_jobs = state.get('jobs', [])
                 if live_jobs:
-                    st.dataframe(pd.DataFrame(live_jobs), width='stretch')
+                    st.dataframe(pd.DataFrame(live_jobs), use_container_width=True)
                 
             time.sleep(2)
             st.rerun()
@@ -495,11 +510,11 @@ elif page == "🎯 Live Hunter":
     else:
         st.info("Le scraper est actuellement arrêté. Lance-le pour voir les logs en direct.")
     
-elif page == "🗃️ Database":
+elif page == "🗃️ Base de données":
     db_c1, db_c2 = st.columns([5, 1])
     with db_c1:
-        st.markdown("### 🗃️ PostgreSQL Master Database")
-        st.markdown("L'historique complet, brut et sans censure de chaque job scanné par le bot.")
+        st.markdown("### 🗃️ Base de Données Globale")
+        st.markdown("L'historique complet et détaillé de chaque opportunité scannée.")
     with db_c2:
         if st.button("🔄 Rafraîchir"):
             st.rerun()
@@ -513,7 +528,7 @@ elif page == "🗃️ Database":
                 export_df.to_excel(writer, index=False, sheet_name='Historique Jobs')
             
             st.download_button(
-                label="📥 Excel",
+                label="📥 Télécharger Excel",
                 data=output.getvalue(),
                 file_name=f"stage_hunter_export_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -557,7 +572,7 @@ elif page == "🗃️ Database":
             )
             
         st.markdown("---")
-        st.markdown("### 🔍 AI Inspector")
+        st.markdown("### 🔍 Inspecteur IA")
         st.markdown("Explorateur détaillé des analyses IA et documents générés métier par métier.")
         
         # Group jobs by company for the inspector
@@ -634,14 +649,14 @@ elif page == "🗃️ Database":
     else:
         st.info("Aucune donnée dans la base pour le moment.")
 
-elif page == "✉️ Auto-Mailing":
+elif page == "✉️ Suivi Emails":
     st.markdown("### ⏰ Relances Intelligentes (Follow-ups)")
-    st.markdown("Cette interface vérifie ton compte GMAIL pour synchroniser tes candidatures.")
+    st.markdown("Cette interface vérifie ta boîte mail pour synchroniser l'avancement de tes candidatures.")
     
-    if st.button("✉️ Lancer Script Gmail Sync"):
+    if st.button("✉️ Lancer la Synchronisation Email"):
         try:
             subprocess.Popen([sys.executable, "main.py", "mail"], cwd=os.getcwd())
-            st.toast("Email Sync Started!", icon="✅")
+            st.toast("Synchronisation démarrée !", icon="✅")
         except Exception as e:
             st.error(str(e))
 
@@ -656,8 +671,13 @@ elif page == "✉️ Auto-Mailing":
             
             if logs:
                 st.markdown("---")
-                st.markdown("##### ⚙️ Logs de Synchronisation")
-                st.code("\n".join(logs), language="bash")
+                st.markdown("##### 🔄 État de la Synchronisation")
+                
+                latest_log = logs[-1] if len(logs) > 0 else "Analyse en attente..."
+                st.info(f"**Vérification :** {latest_log}")
+                
+                with st.expander("Voir les détails techniques (Logs)"):
+                    st.code("\n".join(logs), language="bash")
                 
                 if status == "Syncing Emails...":
                     with st.status("Vérification de Gmail en cours...", expanded=False):
@@ -670,7 +690,7 @@ elif page == "✉️ Auto-Mailing":
         except:
             pass
 
-elif page == "⚙️ Configuration":
+elif page == "⚙️ Réglages":
     st.markdown("### ⚙️ Centre de Configuration")
     st.markdown("Personnalise le comportement du bot, de la recherche et de la blacklist sans toucher au code.")
     
