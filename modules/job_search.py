@@ -553,7 +553,7 @@ class JobSearch:
         import random
 
         total_found = 0
-        target_limit = 3
+        target_limit = 2
         if self.dashboard:
             self.dashboard.log(f"Target validation for this run: {target_limit} offers")
             
