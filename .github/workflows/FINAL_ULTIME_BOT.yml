@@ -42,4 +42,4 @@ jobs:
           MASTER_CV_TEXT: ${{ secrets.MASTER_CV_TEXT }}
         run: |
           echo "Démarrage du script principal..."
-          python -u main.py search
+          python -u main.py search --cron

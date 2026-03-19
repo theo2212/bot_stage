@@ -19,6 +19,33 @@ def init_config():
     # Placeholder for backward compatibility if needed, but we use load_config directly
     return load_config("config.yaml")
 
+def run_cron_search(fresh=False):
+    """Headless single-pass execution for GitHub Actions / Cron jobs"""
+    print("--- 🤖 RUNNING IN HEADLESS CRON MODE ---")
+    from modules.job_search import JobSearch
+    from modules.auth import AuthManager
+    
+    auth = AuthManager()
+    user_ids = auth.get_all_user_ids()
+    
+    if not user_ids:
+        print("[CRON] No users found in database. Searching with default generic config (No User).")
+        searcher = JobSearch()
+        searcher.run()
+    else:
+        print(f"[CRON] Proceeding for {len(user_ids)} registered users.")
+        for uid in user_ids:
+            try:
+                user_data = auth.get_user_by_id(uid)
+                print(f"\n[CRON] Starting extraction for User: {user_data.get('username', uid)}")
+                searcher = JobSearch(user_id=uid)
+                searcher.run()
+                print(f"[CRON] Completed for {user_data.get('username', uid)}")
+            except Exception as e:
+                print(f"[CRON] Error for user {uid}: {e}")
+                
+    print("\n--- ✅ HEADLESS CRON SEARCH COMPLETE ---")
+
 def run_search(fresh=False):
     import time
     from rich.live import Live
@@ -183,17 +210,48 @@ def run_search(fresh=False):
                 time.sleep(5)
                 break
 
+def run_cron_search(fresh=False):
+    """Headless single-pass execution for GitHub Actions / Cron jobs"""
+    print("--- 🤖 RUNNING IN HEADLESS CRON MODE ---")
+    from modules.job_search import JobSearch
+    from modules.auth import AuthManager
+    
+    auth = AuthManager()
+    user_ids = auth.get_all_user_ids()
+    
+    if not user_ids:
+        print("[CRON] No users found in database. Searching with default generic config (No User).")
+        searcher = JobSearch()
+        searcher.run()
+    else:
+        print(f"[CRON] Proceeding for {len(user_ids)} registered users.")
+        for uid in user_ids:
+            try:
+                user_data = auth.get_user_by_id(uid)
+                print(f"\n[CRON] Starting extraction for User: {user_data.get('username', uid)}")
+                searcher = JobSearch(user_id=uid)
+                searcher.run()
+                print(f"[CRON] Completed for {user_data.get('username', uid)}")
+            except Exception as e:
+                print(f"[CRON] Error for user {uid}: {e}")
+                
+    print("\n--- ✅ HEADLESS CRON SEARCH COMPLETE ---")
+
 def main():
     print("--- Stage Hunter 3000 ---")
 
     if len(sys.argv) > 1:
         cmd = sys.argv[1]
         fresh = "--fresh" in sys.argv
+        cron = "--cron" in sys.argv
         
         if cmd == "search":
             print("Launching Scraper...")
             try:
-                run_search(fresh=fresh)
+                if cron:
+                    run_cron_search(fresh=fresh)
+                else:
+                    run_search(fresh=fresh)
             except Exception as e:
                 traceback.print_exc()
                 print(f"CRITICAL ERROR IN SEARCH: {e}")
