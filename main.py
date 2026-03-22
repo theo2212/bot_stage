@@ -166,11 +166,16 @@ def run_search(fresh=False):
                 if current_status == "running":
                     live.update(dashboard.generate_layout())
                     
+                    # Refresh user list each cycle to pick up new registrations
+                    user_ids = auth.get_all_user_ids()
+                    
                     for uid in user_ids:
                         user_data = auth.get_user_by_id(uid)
+                        if not user_data: continue
+                        
                         searcher = JobSearch(dashboard=dashboard, user_id=uid)
                         
-                        dashboard.set_status(f"[{user_data['username']}] Checking LinkedIn...")
+                        dashboard.set_status(f"[{user_data['username']}] Recherche en cours...")
                         dashboard.log(f"Starting cycle for {user_data['username']}...")
                         
                         new_jobs = searcher.run()

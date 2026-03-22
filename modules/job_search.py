@@ -21,7 +21,7 @@ class JobSearch:
         self.db_path = self.config.get("paths", {}).get("tracking_db", "data/jobs_db.json")
         self.db = DBManager(init_db=True)
         self.db.migrate_statuses() # One-time migration to standardize statuses
-        self.seen_links = self._load_db()
+        self.seen_links = self._load_db(self.user_id)
         self.new_jobs = []
         self.notifier = Notifier(config_path)
         self.analyzer = Analyzer(config_path)
@@ -88,15 +88,15 @@ class JobSearch:
             
         return url.split('?')[0]
 
-    def _load_db(self):
+    def _load_db(self, user_id=None):
         """
         Loads the database of seen jobs directly from PostgreSQL.
         This provides instant local state restoration without Notion API latency.
         """
         if self.dashboard:
-            self.dashboard.log("Loading previously seen jobs from PostgreSQL Database...")
+            self.dashboard.log(f"Loading previously seen jobs from PostgreSQL Database (User: {user_id or 'Global'})...")
         try:
-            seen_links = self.db.get_all_seen_links()
+            seen_links = self.db.get_all_seen_links(user_id=user_id)
             if self.dashboard:
                 self.dashboard.log(f"Loaded {len(seen_links)} jobs instantly.")
             return seen_links

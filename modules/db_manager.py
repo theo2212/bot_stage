@@ -70,7 +70,7 @@ class DBManager:
             ''')
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS jobs (
-                lien TEXT PRIMARY KEY,
+                lien TEXT,
                 titre TEXT,
                 entreprise TEXT,
                 lieu TEXT,
@@ -79,6 +79,7 @@ class DBManager:
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 critique_ia TEXT, -- JSON string in SQLite
                 user_id INTEGER,
+                PRIMARY KEY (lien, user_id),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
             ''')
@@ -108,7 +109,7 @@ class DBManager:
             );
 
             CREATE TABLE IF NOT EXISTS jobs (
-                lien TEXT PRIMARY KEY,
+                lien TEXT,
                 titre TEXT,
                 entreprise TEXT,
                 lieu TEXT,
@@ -116,20 +117,49 @@ class DBManager:
                 score_ia INTEGER DEFAULT 0,
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 critique_ia JSONB,
-                user_id INTEGER REFERENCES users(id)
+                user_id INTEGER REFERENCES users(id),
+                PRIMARY KEY (lien, user_id)
             );
             ALTER TABLE jobs ADD COLUMN IF NOT EXISTS critique_ia JSONB;
             ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id INTEGER;
             ''')
+            
+            # Migration for V1.5: Drop old PK and add new composite PK in PG
+            try:
+                cursor.execute("""
+                    DO $$ 
+                    BEGIN 
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE table_name='jobs' AND constraint_type='PRIMARY KEY'
+                        ) THEN
+                            IF (SELECT count(*) FROM information_schema.key_column_usage WHERE table_name='jobs' AND constraint_name=(
+                                SELECT constraint_name FROM information_schema.table_constraints 
+                                WHERE table_name='jobs' AND constraint_type='PRIMARY KEY' LIMIT 1
+                            )) = 1 THEN
+                                ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_pkey;
+                                ALTER TABLE jobs ADD PRIMARY KEY (lien, user_id);
+                            END IF;
+                        END IF;
+                    END $$;
+                """)
+            except: pass
+            
             conn.commit()
             cursor.close()
             conn.close()
 
-    def get_all_seen_links(self) -> set:
-        """Loads all previously seen URLs."""
+    def get_all_seen_links(self, user_id=None) -> set:
+        """Loads all previously seen URLs for a specific user to prevent global deduplication."""
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT lien FROM jobs")
+        
+        if user_id:
+            placeholder = "?" if self.use_sqlite else "%s"
+            cursor.execute(f"SELECT lien FROM jobs WHERE user_id = {placeholder}", (user_id,))
+        else:
+            cursor.execute("SELECT lien FROM jobs")
+            
         links = {row[0] for row in cursor.fetchall()}
         cursor.close()
         conn.close()
@@ -194,17 +224,17 @@ class DBManager:
                 cursor.execute('''
                 INSERT INTO jobs (lien, titre, entreprise, lieu, statut, score_ia, date, critique_ia, user_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(lien) DO UPDATE SET
+                ON CONFLICT(lien, user_id) DO UPDATE SET
                     titre=excluded.titre, entreprise=excluded.entreprise, lieu=excluded.lieu,
-                    statut=excluded.statut, score_ia=excluded.score_ia, date=excluded.date, critique_ia=excluded.critique_ia, user_id=excluded.user_id
+                    statut=excluded.statut, score_ia=excluded.score_ia, date=excluded.date, critique_ia=excluded.critique_ia
                 ''', (job_dict.get('link', ''), job_dict.get('title', 'Inconnu'), job_dict.get('company', 'Inconnu'), job_dict.get('location', 'Inconnu'), status_val, score, date_val, critique_ia_val, user_id))
             else:
                 cursor.execute('''
                 INSERT INTO jobs (lien, titre, entreprise, lieu, statut, score_ia, date, critique_ia, user_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (lien) DO UPDATE SET
+                ON CONFLICT (lien, user_id) DO UPDATE SET
                     titre=EXCLUDED.titre, entreprise=EXCLUDED.entreprise, lieu=EXCLUDED.lieu,
-                    statut=EXCLUDED.statut, score_ia=EXCLUDED.score_ia, date=EXCLUDED.date, critique_ia=EXCLUDED.critique_ia, user_id=EXCLUDED.user_id
+                    statut=EXCLUDED.statut, score_ia=EXCLUDED.score_ia, date=EXCLUDED.date, critique_ia=EXCLUDED.critique_ia
                 ''', (job_dict.get('link', ''), job_dict.get('title', 'Inconnu'), job_dict.get('company', 'Inconnu'), job_dict.get('location', 'Inconnu'), status_val, score, date_val, critique_ia_val, user_id))
             
             conn.commit()
