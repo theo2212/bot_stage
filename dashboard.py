@@ -648,6 +648,17 @@ elif page == "🗃️ Base de données":
                                     st.markdown(f"- {c}")
                         else:
                             st.info(str(pc_data))
+                        
+                    # --- REJECTION BUTTON ---
+                    if row['Statut'] != 'Refusé':
+                        if st.button("🗑️ Refuser cette offre", key=f"rej_{row['Lien']}", use_container_width=True):
+                            db_rej = DBManager()
+                            if db_rej.update_job_status(row['Lien'], 'Refusé'):
+                                st.toast("Offre refusée. Le moteur va apprendre de ce choix.", icon="🗑️")
+                                time.sleep(0.5)
+                                st.rerun()
+                    else:
+                        st.info("Cette offre a été refusée.")
                             
                     with t_lm:
                          lm_text = crit.get("cover_letter") or crit.get("COVER_LETTER", "Aucune lettre générée dans cette version.")
@@ -854,7 +865,12 @@ elif page == "👤 Mon Profil":
             # Parse strings back to lists
             new_kws = [k.strip() for k in new_kws_str.split(",") if k.strip()]
             new_locs = [l.strip() for l in new_locs_str.split(",") if l.strip()]
-            new_search_config = json.dumps({"keywords": new_kws, "locations": new_locs})
+            
+            # Preserve existing config keys (like anti_patterns)
+            new_s_conf = s_conf.copy() if isinstance(s_conf, dict) else {}
+            new_s_conf["keywords"] = new_kws
+            new_s_conf["locations"] = new_locs
+            new_search_config = json.dumps(new_s_conf)
 
             conn = DBManager()._get_conn()
             cursor = conn.cursor()
@@ -873,11 +889,28 @@ elif page == "👤 Mon Profil":
                     ''', (new_name, new_email, new_phone, new_linkedin, new_cv, new_search_config, user_data['id']))
                 conn.commit()
                 st.session_state.user = auth.get_user_by_id(user_data['id'])
-                st.success("Identity & Search Config updated successfully!")
+                st.success("✅ Profil et critères mis à jour !")
                 time.sleep(1)
                 st.rerun()
             except Exception as e:
-                st.error(f"Error updating profile: {e}")
+                st.error(f"Erreur lors de la mise à jour : {e}")
             finally:
                 cursor.close()
                 conn.close()
+
+    st.markdown("---")
+    st.markdown("#### 🧠 Intelligence & Optimisation")
+    st.caption("Le moteur apprend de vos refus pour affiner les prochaines offres. Cliquez ici pour forcer l'analyse de vos derniers choix.")
+    
+    if st.button("🚀 OPTIMISER MON PROFIL IA", use_container_width=True):
+        from modules.job_search import JobSearch
+        with st.spinner("Analyse des préférences en cours..."):
+            js = JobSearch(user_id=user_data['id'])
+            js.learn_from_rejections()
+            st.success("Votre profil IA a été mis à jour via vos derniers refus !")
+            time.sleep(1)
+            st.rerun()
+            
+    if s_conf.get('anti_patterns'):
+        with st.expander("👁️ Voir mes règles de filtrage actuelles"):
+            st.info(s_conf['anti_patterns'])

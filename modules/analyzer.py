@@ -30,10 +30,15 @@ class Analyzer:
             anti_patterns_section = f"\nUSER DISLIKES (ANTI-PATTERNS):\n{anti_patterns}\nCRITICAL: If the job matches these anti-patterns, drastically lower the match_score (below 30).\n"
             
         prompt = f"""
-        Role: Senior Tech Recruiter.
+        Role: Senior Tech Recruiter focusing on Internships (Stages) and Apprenticeships (Alternances).
         Task: Analyze the following CV against the Job Description.
         Goal: Provide specific, actionable advice to make the CV a 90%+ match. Provide output in PERFECT JSON format.
         {anti_patterns_section}
+        
+        CRITICAL FILTERING RULES:
+        1. TYPE: The job MUST be an Internship (Stage), Apprenticeship (Alternance), or a Junior placement.
+        2. PENALTY: If the job is clearly a Senior role, a Full-time CDI (not for a student), or unrelated to the candidate's core field, set match_score to 0-20.
+        3. KEYWORDS: If the title or description doesn't mention "Stage", "Intern", "Apprentice", or "Alternance", treat it with high suspicion unless it's explicitly a student role.
         
         JOB DESCRIPTION:
         {job_description[:2000]} (truncated)
@@ -43,8 +48,8 @@ class Analyzer:
         
         OUTPUT FORMAT (Respond ONLY with valid JSON):
         {{
-            "match_score": <integer 0-100>,
-            "short_description": "<Une liste à puces riche et détaillée (5-8 points) résumant les missions exactes et les défis techniques mentionnés dans l'offre. Ne parle absolument pas du candidat ici.>",
+            "match_score": <integer 0-100 - Be very strict, only 80+ if it's truly a relevant INTERNSHIP>,
+            "short_description": "<Une liste à puces riche et détaillée (5-8 points) résumant les missions exactes. Mentionne CLAIREMENT s'il s'agit d'un stage ou d'une alternance au début.>",
             "company_info": "<Un paragraphe élégant et complet présentant l'entreprise, son secteur, sa culture et ses ambitions.>",
             "pros_cons": {{
                 "pros": ["point fort 1", "point fort 2"],

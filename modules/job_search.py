@@ -28,11 +28,7 @@ class JobSearch:
         self.generator = Generator(config_path)
         self.notion = NotionAPI(config_path)
         
-        self.anti_patterns_file = "data/anti_patterns.txt"
-        self.anti_patterns = ""
-        if os.path.exists(self.anti_patterns_file):
-            with open(self.anti_patterns_file, "r", encoding="utf-8") as f:
-                self.anti_patterns = f.read().strip()
+        self.user_anti_patterns = ""
         
         if self.user_id:
             from .auth import AuthManager
@@ -49,6 +45,7 @@ class JobSearch:
                     if isinstance(search_conf, dict):
                         self.user_keywords = search_conf.get('keywords', self.config.get("search", {}).get("keywords", []))
                         self.user_locations = search_conf.get('locations', self.config.get("search", {}).get("locations", []))
+                        self.user_anti_patterns = search_conf.get('anti_patterns', "")
                 else:
                     self.user_keywords = self.config.get("search", {}).get("keywords", [])
                     self.user_locations = self.config.get("search", {}).get("locations", [])
@@ -60,6 +57,11 @@ class JobSearch:
             # Fallback for single-user CLI mode or CI
             self.user_keywords = self.config.get("search", {}).get("keywords", [])
             self.user_locations = self.config.get("search", {}).get("locations", [])
+            self.user_anti_patterns = ""
+            if os.path.exists("data/anti_patterns.txt"):
+                with open("data/anti_patterns.txt", "r", encoding="utf-8") as f:
+                    self.user_anti_patterns = f.read().strip()
+            
             cv_path = self.config.get("paths", {}).get("master_cv", "data/cv.pdf")
             env_cv_text = self.config.get("user_profile", {}).get("cv_text_env")
             
@@ -508,7 +510,7 @@ class JobSearch:
             base_stub = f"Role: {job['title']} at {job['company']}. Source: {job['source']}.\n\n"
             job_desc_stub = base_stub + (job.get("description") or "No description provided.")
             
-            json_match = self.analyzer.analyze_job_match_json(self.cv_text, job_desc_stub, anti_patterns=self.anti_patterns)
+            json_match = self.analyzer.analyze_job_match_json(self.cv_text, job_desc_stub, anti_patterns=self.user_anti_patterns)
             
             if json_match:
                 score = json_match.get("match_score", 0)
@@ -629,4 +631,41 @@ class JobSearch:
                     traceback.print_exc()
 
         return self.new_jobs
+
+    def learn_from_rejections(self):
+        """Analyzes rejected jobs for the current user and updates their anti-patterns."""
+        if not self.user_id:
+            return
+            
+        rejected = self.db.get_rejected_jobs(user_id=self.user_id, limit=10)
+        if not rejected:
+            if self.dashboard: self.dashboard.log("No rejections found to learn from.")
+            return
+            
+        if self.dashboard: self.dashboard.log(f"🧠 AI is learning from {len(rejected)} rejections...")
+        new_anti_patterns = self.analyzer.analyze_rejections(rejected)
+        
+        if new_anti_patterns:
+            # Simple merge
+            combined = self.user_anti_patterns
+            if combined:
+                if new_anti_patterns not in combined:
+                    combined += "\n" + new_anti_patterns
+            else:
+                combined = new_anti_patterns
+            
+            # Update DB
+            from .auth import AuthManager
+            auth = AuthManager(db_manager=self.db)
+            user_data = auth.get_user_by_id(self.user_id)
+            if user_data:
+                conf = user_data.get('search_config', {})
+                if isinstance(conf, str): conf = json.loads(conf)
+                if not isinstance(conf, dict): conf = {}
+                
+                conf['anti_patterns'] = combined
+                auth.update_user_config(self.user_id, conf)
+                self.user_anti_patterns = combined
+                if self.dashboard:
+                    self.dashboard.log(f"✅ AI profile optimized based on manual rejections.")
 

@@ -257,7 +257,52 @@ class DBManager:
         conn.commit()
         cursor.close()
         conn.close()
+        conn.commit()
+        cursor.close()
+        conn.close()
         return updated
+
+    def update_job_status(self, lien: str, new_status: str) -> bool:
+        """Updates the status of a specific job by its link."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        
+        valid_statuses = ['À postuler', 'Postulé', 'En cours', 'NULL', 'Entretien', 'Refusé', 'Mise en relation']
+        if new_status not in valid_statuses:
+            return False
+            
+        placeholder = "?" if self.use_sqlite else "%s"
+        cursor.execute(f"UPDATE jobs SET statut = {placeholder} WHERE lien = {placeholder}", (new_status, lien))
+        
+        updated = cursor.rowcount > 0
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return updated
+
+    def get_rejected_jobs(self, user_id=None, limit=20) -> list:
+        """Fetches recently rejected jobs for learning."""
+        conn = self._get_conn()
+        query = "SELECT titre, entreprise FROM jobs WHERE statut = 'Refusé'"
+        params = []
+        if user_id:
+            query += " AND user_id = %s" if not self.use_sqlite else " AND user_id = ?"
+            params.append(user_id)
+        query += " ORDER BY date DESC LIMIT %s" if not self.use_sqlite else " ORDER BY date DESC LIMIT ?"
+        params.append(limit)
+        
+        if self.use_sqlite:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            results = [dict(row) for row in cursor.fetchall()]
+        else:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(query, params)
+            results = [dict(row) for row in cursor.fetchall()]
+        
+        cursor.close()
+        conn.close()
+        return results
 
     def migrate_statuses(self):
         """Obsolete: Statuses are now enforced as ENUM upon insertion."""

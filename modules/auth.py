@@ -89,3 +89,13 @@ class AuthManager:
         finally:
             cursor.close()
             conn.close()
+
+    def get_all_user_ids(self):
+        conn = self.db._get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT id FROM users")
+            return [r[0] for r in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()

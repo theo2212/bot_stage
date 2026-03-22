@@ -28,8 +28,8 @@ class UniversalScraper:
         
         # Force JobSpy to look for internships
         search_query = single_keyword
-        if "stage" not in single_keyword.lower() and "intern" not in single_keyword.lower() and "alternance" not in single_keyword.lower():
-            search_query = f"{single_keyword} stage"
+        if not any(x in single_keyword.lower() for x in ["stage", "intern", "alternance", "apprentissage"]):
+            search_query = f"{single_keyword} stage internship"
         
         try:
             # JobSpy Call
