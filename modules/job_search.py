@@ -134,6 +134,9 @@ class JobSearch:
             if not self.cv_text or len(self.cv_text) < 100:
                 if self.dashboard:
                     self.dashboard.log(f"⚠️ [User {self.user_id}] CV missing or too short. Skipping AI analysis for {job['company']}.")
+                # Still save to DB to avoid re-harvesting, but with NULL status
+                job['status'] = "NULL"
+                self.db.save_job(job, user_id=self.user_id)
                 return False
 
             # A. Extract AI Analysis (Now including everything)
@@ -592,20 +595,18 @@ class JobSearch:
                     # 2 & 3. Score Candidates & Sort Descending by Score
                     scored_jobs = self._score_candidates(job_pool)
                     
-                    # 4. Process the Top Matches in Parallel
+                    # Process the Top Matches in Parallel
                     high_score_jobs = [j for j in scored_jobs if j.get('ai_score', 0) >= 80]
+                    low_score_jobs = [j for j in scored_jobs if j.get('ai_score', 0) < 80]
                     
                     if high_score_jobs:
                         if self.dashboard:
                             self.dashboard.log(f"Processing {len(high_score_jobs)} top matches in parallel...")
                         
                         with ThreadPoolExecutor(max_workers=max_threads) as process_executor:
-                            # Map process_job to the top jobs
-                            # We filter success results later
-                            results = list(process_executor.map(self.process_job, high_score_jobs))
+                            analysis_results = list(process_executor.map(self.process_job, high_score_jobs))
                             
-                            for job, success in zip(high_score_jobs, results):
-                                # Update Dashboard Visuals for top matches
+                            for job, success in zip(high_score_jobs, analysis_results):
                                 if self.dashboard:
                                     self.dashboard.add_job_row(job['source'], job['company'], job['title'], f"Match: {job['ai_score']}%")
                                 
@@ -614,15 +615,20 @@ class JobSearch:
                                     job['status'] = "À postuler"
                                     self.db.save_job(job, user_id=self.user_id)
                                     total_found += 1
+                                else:
+                                    # Still save to DB as 'NULL' to avoid re-harvesting
+                                    job['status'] = "NULL"
+                                    self.db.save_job(job, user_id=self.user_id)
                                     
                                 if total_found >= target_limit:
                                     stop_search = True
                                     break
-                                    
-                    # Add low-score jobs to new_jobs list for dashboard visibility, but DON'T save to DB
-                    for job in scored_jobs:
-                        if job.get('ai_score', 0) < 80:
-                            self.new_jobs.append(job)
+                    
+                    # Also save low-score jobs to DB as 'NULL' to prevent re-analyzing them every cycle
+                    for job in low_score_jobs:
+                        self.new_jobs.append(job)
+                        job['status'] = "NULL"
+                        self.db.save_job(job, user_id=self.user_id)
                             
                 except Exception as e:
                     if self.dashboard:

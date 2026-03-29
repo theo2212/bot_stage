@@ -19,14 +19,14 @@ class AuthManager:
             hashed = self.hash_password(password)
             if self.db.use_sqlite:
                 cursor.execute('''
-                INSERT INTO users (username, password_hash, email, full_name, phone, linkedin_url, cv_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (username, hashed, email, full_name, phone, linkedin, cv_text))
+                INSERT INTO users (username, password_hash, email, full_name, phone, linkedin_url, cv_text, search_config)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (username, hashed, email, full_name, phone, linkedin, cv_text, '{}'))
             else:
                 cursor.execute('''
-                INSERT INTO users (username, password_hash, email, full_name, phone, linkedin_url, cv_text)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ''', (username, hashed, email, full_name, phone, linkedin, cv_text))
+                INSERT INTO users (username, password_hash, email, full_name, phone, linkedin_url, cv_text, search_config)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (username, hashed, email, full_name, phone, linkedin, cv_text, '{}'))
             conn.commit()
             return True
         except Exception as e:

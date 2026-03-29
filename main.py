@@ -170,20 +170,24 @@ def run_search(fresh=False):
                     user_ids = auth.get_all_user_ids()
                     
                     for uid in user_ids:
-                        user_data = auth.get_user_by_id(uid)
-                        if not user_data: continue
-                        
-                        searcher = JobSearch(dashboard=dashboard, user_id=uid)
-                        
-                        dashboard.set_status(f"[{user_data['username']}] Recherche en cours...")
-                        dashboard.log(f"Starting cycle for {user_data['username']}...")
-                        
-                        new_jobs = searcher.run()
-                        
-                        if new_jobs:
-                            dashboard.log(f"[{user_data['username']}] Found {len(new_jobs)} new jobs!")
-                        else:
-                            dashboard.log(f"[{user_data['username']}] No new jobs.")
+                        try:
+                            user_data = auth.get_user_by_id(uid)
+                            if not user_data: continue
+                            
+                            searcher = JobSearch(dashboard=dashboard, user_id=uid)
+                            
+                            dashboard.set_status(f"[{user_data['username']}] Recherche en cours...")
+                            dashboard.log(f"Starting cycle for {user_data['username']}...")
+                            
+                            new_jobs = searcher.run()
+                            
+                            if new_jobs:
+                                dashboard.log(f"[{user_data['username']}] Found {len(new_jobs)} matches!")
+                            else:
+                                dashboard.log(f"[{user_data['username']}] No results found.")
+                        except Exception as user_err:
+                            dashboard.log(f"❌ Error for user {uid}: {user_err}")
+                            continue
                     
                     dashboard.set_status("Sleeping (10min)")
                     
