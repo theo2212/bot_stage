@@ -99,3 +99,36 @@ class AuthManager:
         finally:
             cursor.close()
             conn.close()
+
+    def get_next_user_for_rotation(self):
+        """Fetches the user least recently searched for rotating cron runs."""
+        conn = self.db._get_conn()
+        cursor = conn.cursor()
+        try:
+            # Order by last_searched_at ASC (NULLS FIRST in PG, automatically NULLS FIRST in SQLite)
+            if self.db.use_sqlite:
+                query = "SELECT id FROM users ORDER BY last_searched_at ASC LIMIT 1"
+            else:
+                query = "SELECT id FROM users ORDER BY last_searched_at ASC NULLS FIRST LIMIT 1"
+            
+            cursor.execute(query)
+            res = cursor.fetchone()
+            return res[0] if res else None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def mark_user_as_searched(self, user_id):
+        """Updates the last_searched_at timestamp for a user."""
+        from datetime import datetime
+        conn = self.db._get_conn()
+        cursor = conn.cursor()
+        try:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            placeholder = "?" if self.db.use_sqlite else "%s"
+            cursor.execute(f"UPDATE users SET last_searched_at = {placeholder} WHERE id = {placeholder}", (now, user_id))
+            conn.commit()
+            return True
+        finally:
+            cursor.close()
+            conn.close()

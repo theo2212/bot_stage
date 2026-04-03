@@ -65,7 +65,8 @@ class DBManager:
                 full_name TEXT,
                 phone TEXT,
                 linkedin_url TEXT,
-                search_config TEXT -- JSON string
+                search_config TEXT, -- JSON string
+                last_searched_at TIMESTAMP
             )
             ''')
             cursor.execute('''
@@ -105,7 +106,8 @@ class DBManager:
                 full_name TEXT,
                 phone TEXT,
                 linkedin_url TEXT,
-                search_config JSONB
+                search_config JSONB,
+                last_searched_at TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS jobs (
@@ -144,6 +146,8 @@ class DBManager:
                     END $$;
                 """)
             except: pass
+            
+            cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_searched_at TIMESTAMP")
             
             conn.commit()
             cursor.close()

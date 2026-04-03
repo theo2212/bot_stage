@@ -226,23 +226,28 @@ def run_cron_search(fresh=False):
     from modules.auth import AuthManager
     
     auth = AuthManager()
-    user_ids = auth.get_all_user_ids()
+    uid = auth.get_next_user_for_rotation()
     
-    if not user_ids:
-        print("[CRON] No users found in database. Searching with default generic config (No User).")
-        searcher = JobSearch()
+    if not uid:
+        print("[CRON] No users found in database to process.")
+        return
+    
+    try:
+        user_data = auth.get_user_by_id(uid)
+        username = user_data.get('username', f'ID:{uid}')
+        
+        print(f"\n[CRON] 🔄 ROTATION: Starting search for User: {username}")
+        searcher = JobSearch(user_id=uid)
         searcher.run()
-    else:
-        print(f"[CRON] Proceeding for {len(user_ids)} registered users.")
-        for uid in user_ids:
-            try:
-                user_data = auth.get_user_by_id(uid)
-                print(f"\n[CRON] Starting extraction for User: {user_data.get('username', uid)}")
-                searcher = JobSearch(user_id=uid)
-                searcher.run()
-                print(f"[CRON] Completed for {user_data.get('username', uid)}")
-            except Exception as e:
-                print(f"[CRON] Error for user {uid}: {e}")
+        
+        # Mark as searched only IF it didn't crash
+        auth.mark_user_as_searched(uid)
+        print(f"[CRON] ✅ Successfully completed and rotated for {username}")
+        
+    except Exception as e:
+        print(f"[CRON] ❌ Error during rotation for user {uid}: {e}")
+        import traceback
+        traceback.print_exc()
                 
     print("\n--- ✅ HEADLESS CRON SEARCH COMPLETE ---")
 
